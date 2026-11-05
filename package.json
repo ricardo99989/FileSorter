@@ -1,8 +1,8 @@
 {
   "name": "filesorter",
   "productName": "FileSorter",
-  "version": "1.0.0",
-  "description": "轻量级 Windows 桌面文件自动整理工具：自动归类、预览确认、全局搜索与相似推荐",
+  "version": "3.0.0",
+  "description": "把文件整理做安全的 Windows 桌面工具：预览后执行、多步撤销、自定义规则、查重与标签",
   "main": "src/main/index.js",
   "license": "MIT",
   "author": {
@@ -10,10 +10,12 @@
   },
   "keywords": [
     "electron",
+    "file-manager",
     "file-organizer",
-    "desktop",
-    "windows",
-    "neumorphism"
+    "duplicate-finder",
+    "glassmorphism",
+    "virtual-scroll",
+    "windows"
   ],
   "private": false,
   "scripts": {
@@ -26,5 +28,8 @@
   "devDependencies": {
     "electron": "44.7.2",
     "electron-builder": "^26.18.0"
+  },
+  "dependencies": {
+    "chokidar": "^4.0.3"
   }
 }

@@ -17,7 +17,8 @@ async function statBatch(paths) {
       slice.map(async (full) => {
         try {
           const s = await fs.stat(full);
-          return { path: full, size: s.size, mtime: s.mtimeMs };
+          // birthtimeMs 在部分文件系统上等于 mtime，这里如实返回，不做假数据
+          return { path: full, size: s.size, mtime: s.mtimeMs, ctime: s.birthtimeMs || s.mtimeMs };
         } catch {
           return null;
         }
@@ -76,6 +77,7 @@ async function listTopFiles(dir) {
     path: row.path,
     size: row.size,
     mtime: row.mtime,
+    ctime: row.ctime,
     ext: extOf(row.path),
   }));
 }

@@ -12,9 +12,19 @@ function prefixOf(fileName) {
   return token.replace(/\d+$/, '').toLowerCase();
 }
 
+/** 把文件名切成词，用于「关键词重合」打分（banner_home_v2 → [banner, home, v2]） */
+function tokensOf(fileName) {
+  const ext = extOf(fileName);
+  const base = ext ? fileName.slice(0, -(ext.length + 1)) : fileName;
+  return base
+    .toLowerCase()
+    .split(/[-_\s.()[\]]+/)
+    .filter((token) => token.length >= 2);
+}
+
 /**
  * 相似度打分（纯函数，已单测）。
- * 权重按「同前缀 > 同类型 > 同时间 > 同体积 > 同目录」排布。
+ * 权重按「同前缀 > 关键词重合 > 同类型 > 同时间 > 同体积 > 同目录」排布。
  * @param {{name:string,size:number,mtime:number,path:string}} a
  * @param {{name:string,size:number,mtime:number,path:string}} b
  */
@@ -29,6 +39,14 @@ function scoreSimilar(a, b) {
   const prefixA = prefixOf(a.name);
   const prefixB = prefixOf(b.name);
   if (prefixA.length >= 2 && prefixA === prefixB) score += 5;
+
+  // 关键词重合：banner_home_v2 与 banner_home_final 共享两个词
+  const tokensA = tokensOf(a.name);
+  if (tokensA.length) {
+    const setB = new Set(tokensOf(b.name));
+    const shared = tokensA.filter((token) => setB.has(token)).length;
+    if (shared) score += Math.min(4, shared * 2);
+  }
 
   const dayMs = 86400000;
   const gap = Math.abs(a.mtime - b.mtime);
@@ -64,6 +82,7 @@ async function search(dir, keyword, options = {}) {
       dir: path.dirname(row.path),
       size: row.size,
       mtime: row.mtime,
+      ctime: row.ctime || row.mtime,
       ext: extOf(name),
       categoryId: cat.id,
     };
@@ -109,4 +128,4 @@ async function search(dir, keyword, options = {}) {
   };
 }
 
-module.exports = { search, scoreSimilar, prefixOf };
+module.exports = { search, scoreSimilar, prefixOf, tokensOf };

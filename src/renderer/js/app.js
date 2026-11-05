@@ -1,427 +1,2050 @@
-import { api, formatSize } from './api.js';
-import { motion } from './motion.js';
-import { toast } from './components/ui.js';
-import { navHtml, statsHtml, gridHtml, similarHtml, headingOf } from './views/files.js';
-import { settingsHtml, historyHtml } from './views/settings.js';
-import { openPreview } from './views/preview.js';
+/**
+ * app.js — 渲染层控制器
+ *
+ * 一份 state，一堆渲染函数，所有视图都是它的投影。
+ * 刻意不引框架：这个界面的更新粒度是"整屏换目录"和"单行改选中态"，
+ * 手写的虚拟滚动比任何 diff 都直接，也省掉几百 KB 运行时。
+ */
 
-/** 全局状态。视图只读它，写操作统一走下面的函数。 */
-const state = {
-  dir: '',
-  settings: { customNames: {}, skipHidden: true, motionLevel: 'full', sortBy: 'mtime' },
-  categories: [],
-  categoryById: new Map(),
-  info: null,
-  stats: null,
-  files: [],
-  categoryId: null,
-  keyword: '',
-  sortBy: 'mtime',
-  view: 'files',
-  loading: false,
+import { VirtualList } from './vlist.js';
+import { icon, categoryIcon, categoryTone } from './icons.js';
+import { clamp, debounce, esc, greeting } from './format.js';
+import {
+  filterEntries,
+  gridCardHtml,
+  rowHtml,
+  skeletonHtml,
+  sortEntries,
+  stateHtml,
+  statusHtml,
+  tableHeadHtml,
+} from './views/list.js';
+import { detailsHtml } from './views/details.js';
+import { organizeHtml } from './panels/organize.js';
+import { settingsHtml } from './panels/settings.js';
+import { dupesHtml } from './panels/dupes.js';
+import { spaceHtml } from './panels/space.js';
+import { batchHtml } from './panels/batch.js';
+import { historyHtml } from './panels/history.js';
+import { tagsHtml } from './panels/tags.js';
+import { t, setLang, getLang } from '../../shared/i18n.mjs';
+
+const api = window.filesorter;
+const $ = (id) => document.getElementById(id);
+
+const GRID_GAP = 12;
+const MIN_CARD_W = 156;
+
+/** 卡片高度由 CSS 变量 --card-h 决定（窄窗口会自动变小），虚拟滚动必须跟着它算，否则会错位 */
+const cardHeight = () => cssPx('--card-h', 188);
+
+const dom = {
+  titleMeta: $('titleMeta'),
+  placeList: $('placeList'),
+  driveList: $('driveList'),
+  crumbs: $('crumbs'),
+  content: $('content'),
+  tableHead: $('tableHead'),
+  viewport: $('viewport'),
+  vcontent: $('vcontent'),
+  stateLayer: $('state'),
+  skeleton: $('skeleton'),
+  statusbar: $('statusbar'),
+  details: $('details'),
+  search: $('searchInput'),
+  searchField: $('searchField'),
+  btnTheme: $('btnTheme'),
+  btnList: $('btnList'),
+  btnGrid: $('btnGrid'),
+  btnBack: $('btnBack'),
+  btnForward: $('btnForward'),
+  btnUp: $('btnUp'),
+  btnRefresh: $('btnRefresh'),
+  btnDetail: $('btnDetail'),
+  drawer: $('drawer'),
+  modal: $('modal'),
+  scrim: $('scrim'),
+  menu: $('menu'),
+  toasts: $('toasts'),
+  glow: $('cursorGlow'),
+  selectionBar: $('selectionBar'),
+  selectionCount: $('selectionCount'),
 };
 
-const dom = {};
+const state = {
+  /* 基础数据 */
+  settings: {},
+  categories: [],
+  info: {},
+  places: [],
+  drives: [],
+  clouds: [],
+  ruleMeta: { fields: {}, ops: {} },
+  defaultExcludes: [],
+  tagList: [],
+  pluginData: { items: [], enabled: [], dir: '' },
+  scheduleStatus: {},
+  historyList: [],
 
-function cacheDom() {
-  dom.folderPath = document.getElementById('folderPath');
-  dom.pickFolder = document.getElementById('pickFolder');
-  dom.nav = document.getElementById('categoryNav');
-  dom.utility = document.getElementById('utilityNav');
-  dom.search = document.getElementById('searchInput');
-  dom.statRow = document.getElementById('statRow');
-  dom.grid = document.getElementById('fileGrid');
-  dom.sectionTitle = document.getElementById('sectionTitle');
-  dom.sectionSub = document.getElementById('sectionSub');
-  dom.sortSeg = document.getElementById('sortSeg');
-  dom.similar = document.getElementById('similarPanel');
-  dom.similarList = document.getElementById('similarList');
-  dom.filesPanel = document.getElementById('filesPanel');
-  dom.settingsPanel = document.getElementById('settingsPanel');
-  dom.historyPanel = document.getElementById('historyPanel');
-  dom.btnPreview = document.getElementById('btnPreview');
-  dom.btnUndo = document.getElementById('btnUndo');
+  /* 浏览 */
+  cwd: '',
+  listing: null,
+  entries: [],
+  sort: { key: 'name', dir: 'asc' },
+  view: 'list',
+  cols: 1,
+  parentPath: null,
+  selected: null,
+  selectedEntry: null,
+  checked: new Set(),
+  detail: null,
+  preview: null,
+  tagMap: {},
+  query: '',
+  deep: null,
+  loading: true,
+  error: null,
+  watching: null,
+  cloud: null,
+
+  /* 外观 */
+  theme: 'system',
+  detailOpen: true,
+
+  /* 导航 */
+  history: [],
+  hIndex: -1,
+
+  /* 面板 */
+  panel: '',
+  settingsTab: 'appearance',
+  organize: { loading: false, error: null, plan: null, selected: new Set(), busy: false, progress: null, expanded: new Set() },
+  dupes: { loading: false, progress: null, result: null, selected: new Set(), minSize: 1024 },
+  space: { loading: false, result: null, progress: null },
+  batch: { names: [], template: '{name}_{n:3}', start: 1, find: '', replace: '', preview: null, totalSize: 0 },
+  tagsPanel: { active: new Set(), matchAll: true, results: [] },
+};
+
+/* ------------------------------ 虚拟列表 ------------------------------ */
+
+function cssPx(name, fallback) {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const value = parseFloat(raw);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
-function setCategories(categories) {
-  state.categories = categories;
-  state.categoryById = new Map(categories.map((cat) => [cat.id, cat]));
-}
-
-/* ---------------------------------- 渲染 --------------------------------- */
-
-function renderNav() {
-  dom.nav.innerHTML = navHtml(state);
-}
-
-function renderStats() {
-  dom.statRow.innerHTML = statsHtml(state);
-  for (const el of dom.statRow.querySelectorAll('.stat__value')) {
-    const target = Number(el.dataset.count || 0);
-    if (el.dataset.format === 'size') {
-      motion.countUp(el, target, { formatter: (value) => formatSize(value) });
+const list = new VirtualList({
+  viewport: dom.viewport,
+  content: dom.vcontent,
+  rowHeight: () => (state.view === 'grid' ? cardHeight() + GRID_GAP : cssPx('--row-h', 54)),
+  rowCount: () => (state.view === 'grid' ? Math.ceil(state.entries.length / state.cols) : state.entries.length),
+  createRow: () => {
+    const node = document.createElement('div');
+    node.className = state.view === 'grid' ? 'vrow grid-row' : 'vrow';
+    return node;
+  },
+  renderRow: (index, node) => {
+    if (state.view === 'grid') {
+      const start = index * state.cols;
+      const slice = state.entries.slice(start, start + state.cols);
+      node.className = 'vrow grid-row';
+      node.style.gridTemplateColumns = `repeat(${state.cols}, minmax(0, 1fr))`;
+      node.innerHTML = slice
+        .map((entry) =>
+          gridCardHtml(entry, {
+            selected: state.selected === entry.path,
+            checked: state.checked.has(entry.path),
+          }),
+        )
+        .join('');
     } else {
-      motion.countUp(el, target, {
-        formatter: (value) => Math.round(value).toLocaleString('zh-CN'),
-      });
+      const entry = state.entries[index];
+      node.className = 'vrow';
+      node.innerHTML = entry
+        ? rowHtml(entry, { selected: state.selected === entry.path, checked: state.checked.has(entry.path) })
+        : '';
     }
+  },
+  overscan: 6,
+});
+
+/* ------------------------------ 小工具 ------------------------------ */
+
+function normalizePath(value) {
+  return String(value || '').replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase();
+}
+
+function isSamePath(a, b) {
+  return Boolean(a) && Boolean(b) && normalizePath(a) === normalizePath(b);
+}
+
+function parentOf(dir) {
+  const normalized = String(dir || '').replace(/\//g, '\\').replace(/\\+$/, '');
+  const cut = normalized.lastIndexOf('\\');
+  if (cut < 0) return null;
+  const parent = normalized.slice(0, cut);
+  return /^[A-Za-z]:$/.test(parent) ? `${parent}\\` : parent;
+}
+
+function segmentsOf(dir) {
+  const normalized = String(dir || '').replace(/\//g, '\\');
+  const match = normalized.match(/^([A-Za-z]:)\\?(.*)$/);
+  if (!match) return [{ name: normalized, path: normalized }];
+  const root = `${match[1]}\\`;
+  const rest = match[2].split('\\').filter(Boolean);
+  const parts = [{ name: match[1], path: root, root: true }];
+  let cursor = root;
+  for (const segment of rest) {
+    cursor = `${cursor}${segment}\\`;
+    parts.push({ name: segment, path: cursor.replace(/\\$/, '') });
   }
+  return parts;
 }
 
-function renderGrid({ animate = true } = {}) {
-  dom.grid.innerHTML = gridHtml(state, state.files);
-  if (animate) motion.reveal(dom.grid.children);
+function toast(message, options = {}) {
+  const el = document.createElement('div');
+  el.className = `toast${options.error ? ' toast--error' : ''}`;
+  el.innerHTML = `<span class="toast__dot"></span><span>${esc(message)}</span>`;
+  if (options.action) {
+    const action = document.createElement('button');
+    action.className = 'toast__action';
+    action.textContent = options.action.label;
+    action.addEventListener('click', () => {
+      el.remove();
+      options.action.onClick();
+    });
+    el.appendChild(action);
+  }
+  dom.toasts.appendChild(el);
+  setTimeout(() => {
+    el.classList.add('is-out');
+    setTimeout(() => el.remove(), 220);
+  }, options.duration ?? 3200);
 }
 
-function renderHeading() {
-  const heading = headingOf({ ...state, files: state.files, stats: { ...(state.stats || {}), dir: state.dir } });
-  dom.sectionTitle.textContent = heading.title;
-  dom.sectionSub.textContent = heading.sub;
+function updateGutter() {
+  const gutter = dom.viewport.offsetWidth - dom.viewport.clientWidth;
+  dom.content.style.setProperty('--gutter', `${Math.max(0, gutter)}px`);
 }
 
-function renderSimilar(result) {
-  const view = similarHtml(result);
-  dom.similar.hidden = view.hidden;
-  if (view.hidden) {
-    dom.similarList.innerHTML = '';
+/* ------------------------------ 语言与文案 ------------------------------ */
+
+/** 把 HTML 里带 data-i18n 的静态文案刷一遍 */
+function applyStaticI18n() {
+  for (const node of document.querySelectorAll('[data-i18n]')) {
+    node.textContent = t(node.dataset.i18n);
+  }
+  dom.search.placeholder = t('toolbar.search');
+}
+
+/* ------------------------------ 主题 ------------------------------ */
+
+const media = window.matchMedia('(prefers-color-scheme: dark)');
+
+function resolvedTheme() {
+  if (state.theme === 'system') return media.matches ? 'dark' : 'light';
+  return state.theme === 'dark' ? 'dark' : 'light';
+}
+
+function applyTheme(animate = true) {
+  const theme = resolvedTheme();
+  if (animate) {
+    document.documentElement.classList.add('theme-anim');
+    setTimeout(() => document.documentElement.classList.remove('theme-anim'), 320);
+  }
+  document.documentElement.dataset.theme = theme;
+  const label =
+    state.theme === 'system' ? t('settings.theme.system') : state.theme === 'dark' ? t('settings.theme.dark') : t('settings.theme.light');
+  dom.btnTheme.innerHTML = icon(state.theme === 'system' ? 'monitor' : theme === 'dark' ? 'moon' : 'sun', 15);
+  dom.btnTheme.title = `${t('toolbar.theme')}：${label}`;
+}
+
+media.addEventListener('change', () => {
+  if (state.theme === 'system') applyTheme();
+});
+
+async function cycleTheme() {
+  const order = ['light', 'dark', 'system'];
+  const next = order[(order.indexOf(state.theme) + 1) % order.length];
+  state.theme = next;
+  applyTheme();
+  await api.settings.save({ theme: next });
+  const label =
+    next === 'system' ? t('settings.theme.system') : next === 'dark' ? t('settings.theme.dark') : t('settings.theme.light');
+  toast(t('toast.theme', { name: label }));
+}
+
+function applyMotion(level) {
+  document.documentElement.classList.toggle('motion-soft', level === 'soft');
+  document.documentElement.classList.toggle('motion-off', level === 'off');
+}
+
+/* ------------------------------ 侧栏 ------------------------------ */
+
+function renderSidebar() {
+  dom.placeList.innerHTML = state.places
+    .map((place) => {
+      const active = isSamePath(place.dir, state.cwd) ? ' is-active' : '';
+      return `<button class="place${active}" data-path="${esc(place.dir)}" title="${esc(place.dir)}">
+        ${icon(place.icon, 16)}<span>${esc(place.name)}</span>
+      </button>`;
+    })
+    .join('');
+
+  const clouds = state.clouds.map((cloud) => {
+    const active = isSamePath(cloud.dir, state.cwd) ? ' is-active' : '';
+    return `<button class="place${active}" data-path="${esc(cloud.dir)}" title="${esc(cloud.dir)}">
+      ${icon('globe', 16)}<span>${esc(cloud.name)}</span>
+    </button>`;
+  });
+
+  dom.driveList.innerHTML = [...clouds, ...state.drives
+    .map((drive) => {
+      const active = isSamePath(drive.path, state.cwd) ? ' is-active' : '';
+      return `<button class="place${active}" data-path="${esc(drive.path)}" title="${esc(drive.path)}">
+        ${icon('drive', 16)}<span>${esc(drive.name)}</span>
+      </button>`;
+    })].join('');
+}
+
+/* ------------------------------ 面包屑 ------------------------------ */
+
+function renderCrumbs() {
+  const parts = segmentsOf(state.cwd);
+  const available = dom.crumbs.clientWidth || 320;
+
+  let visible;
+  if (parts.length <= 3) {
+    visible = parts;
+  } else if (available >= 430) {
+    const hidden = parts.length > 4;
+    visible = [
+      parts[0],
+      ...(hidden ? [{ ellipsis: true, path: parts[parts.length - 3].path }] : []),
+      ...parts.slice(-3),
+    ];
+  } else if (available >= 190) {
+    visible = [parts[0], { ellipsis: true, path: parts[parts.length - 2].path }, parts[parts.length - 1]];
+  } else {
+    // 侧边栏/悬浮模式下面包屑只剩百来像素，塞不下三级，只留当前目录
+    visible = [parts[parts.length - 1]];
+  }
+
+  dom.crumbs.classList.toggle('is-solo', visible.length === 1);
+  dom.crumbs.innerHTML = visible
+    .map((part, index) => {
+      const isLast = index === visible.length - 1;
+      const sep = index === 0 ? '' : `<span class="crumb__sep">${icon('chevron', 11)}</span>`;
+      if (part.ellipsis) {
+        return `${sep}<button class="crumb crumb--ellipsis" data-path="${esc(part.path)}" title="跳到上级目录">…</button>`;
+      }
+      return `${sep}<button class="crumb${isLast ? ' is-current' : ''}" data-path="${esc(part.path)}" title="${esc(
+        part.path,
+      )}">${index === 0 ? icon('drive', 13) : ''}<span>${esc(part.name)}</span></button>`;
+    })
+    .join('');
+  dom.crumbs.scrollLeft = 0;
+}
+
+/* ------------------------------ 列表 ------------------------------ */
+
+function rebuildEntries() {
+  const base = state.deep ? state.deep.entries : state.listing?.entries || [];
+  state.entries = sortEntries(filterEntries(base, state.query), state.sort);
+}
+
+function computeCols() {
+  const width = dom.viewport.clientWidth - 24;
+  state.cols = Math.max(1, Math.floor((width + GRID_GAP) / (MIN_CARD_W + GRID_GAP)));
+}
+
+function renderHead() {
+  dom.tableHead.innerHTML = tableHeadHtml(state.sort);
+  dom.tableHead.style.display = state.view === 'grid' ? 'none' : '';
+}
+
+function renderStatus() {
+  if (state.deep) {
+    dom.statusbar.innerHTML = `<span class="statusbar__chip">${icon('search', 11)} ${esc(
+      state.deep.keyword,
+    )}</span>
+      <span class="statusbar__dot"></span><span>${state.entries.length} 个结果</span>
+      <span class="statusbar__spacer"></span>
+      <span class="statusbar__chip">${icon('info', 12)} 结果来自当前文件夹及其子文件夹</span>`;
     return;
   }
-  dom.similarList.innerHTML = view.chips;
-  const note = document.getElementById('similarNote');
-  if (note) note.textContent = view.note;
+  dom.statusbar.innerHTML = statusHtml({
+    ...state,
+    entries: state.entries,
+    watching: state.watching,
+    cloud: state.cloud,
+  });
 }
 
-function renderAll() {
-  renderNav();
-  renderStats();
-  renderHeading();
-  renderGrid();
+function renderList({ resetScroll = false } = {}) {
+  rebuildEntries();
+  if (state.view === 'grid') computeCols();
+  renderHead();
+  if (resetScroll) dom.viewport.scrollTop = 0;
+  list.refresh();
+  updateGutter();
+  renderState();
+  renderStatus();
+  renderSelectionBar();
 }
 
-/* --------------------------------- 数据流 -------------------------------- */
+function renderState() {
+  dom.skeleton.hidden = true;
 
-async function loadFolder(dir) {
-  state.dir = dir;
-  state.categoryId = null;
-  state.keyword = '';
-  dom.search.value = '';
-  dom.folderPath.textContent = dir.split(/[\\/]/).filter(Boolean).pop() || dir;
-  dom.folderPath.title = dir;
-  await refresh();
-}
-
-async function refresh() {
-  if (!state.dir) {
-    renderAll();
+  if (state.loading) {
+    dom.skeleton.innerHTML = skeletonHtml(10);
+    dom.skeleton.hidden = false;
+    dom.stateLayer.hidden = true;
+    dom.content.classList.remove('has-state');
     return;
   }
+
+  let html = '';
+  if (state.error) html = stateHtml(state.error.kind, { message: state.error.message });
+  else if (!state.entries.length) {
+    if (state.deep) html = stateHtml('search', { query: state.deep.keyword, deep: true });
+    else if (state.query) html = stateHtml('search', { query: state.query });
+    else if (state.cwd) html = stateHtml('empty');
+  }
+
+  dom.content.classList.toggle('has-state', Boolean(html));
+  if (html) {
+    dom.stateLayer.innerHTML = html;
+    dom.stateLayer.hidden = false;
+  } else {
+    dom.stateLayer.hidden = true;
+  }
+}
+
+/* ------------------------------ 多选 ------------------------------ */
+
+function renderSelectionBar() {
+  const count = state.checked.size;
+  dom.selectionBar.hidden = count === 0;
+  if (!count) return;
+  dom.selectionCount.textContent = t('batch.selected', { n: count });
+}
+
+function clearChecked() {
+  state.checked.clear();
+  renderSelectionBar();
+  list.refresh();
+}
+
+/* ------------------------------ 详情 ------------------------------ */
+
+function renderDetails() {
+  dom.details.innerHTML = detailsHtml(state);
+}
+
+let detailToken = 0;
+
+async function loadDetail(entry) {
+  const token = (detailToken += 1);
+  const [detail, preview] = await Promise.all([api.describe(entry.path), api.preview(entry.path)]);
+  if (token !== detailToken) return;
+  state.detail = detail.ok
+    ? detail.data
+    : { label: entry.desc?.label, brief: entry.desc?.brief, detail: '', hints: [] };
+  state.preview = preview.ok ? preview.data : { kind: 'none', reason: preview.error };
+  renderDetails();
+}
+
+function select(entry, { scroll = false, index = -1 } = {}) {
+  if (!entry) {
+    state.selected = null;
+    state.selectedEntry = null;
+    state.detail = null;
+    state.preview = null;
+    paintSelection();
+    renderDetails();
+    return;
+  }
+  state.selected = entry.path;
+  state.selectedEntry = entry;
+  state.detail = null;
+  state.preview = null;
+  paintSelection();
+  renderDetails();
+  loadDetail(entry);
+  if (scroll && index >= 0) {
+    const row = state.view === 'grid' ? Math.floor(index / state.cols) : index;
+    list.scrollToIndex(row, 'nearest');
+  }
+}
+
+function paintSelection() {
+  for (const node of dom.vcontent.querySelectorAll('.is-selected')) node.classList.remove('is-selected');
+  if (!state.selected) return;
+  for (const node of dom.vcontent.querySelectorAll(`[data-path="${CSS.escape(state.selected)}"]`)) {
+    node.classList.add('is-selected');
+  }
+}
+
+/* ------------------------------ 导航 ------------------------------ */
+
+function errorKind(code) {
+  if (code === 'EACCES' || code === 'EPERM') return 'permission';
+  if (code === 'ENOENT' || code === 'ENOTDIR') return 'missing';
+  return 'error';
+}
+
+let navToken = 0;
+
+async function navigate(dir, options = {}) {
+  if (!dir) return;
+  const token = (navToken += 1);
+  const { push = true, refresh = false, keepQuery = false } = options;
+  if (!keepQuery) {
+    state.query = '';
+    state.deep = null;
+    dom.search.value = '';
+  }
+
   state.loading = true;
-  renderGrid({ animate: false });
+  state.error = null;
+  state.selected = null;
+  state.selectedEntry = null;
+  state.detail = null;
+  state.preview = null;
+  state.checked.clear();
+  renderState();
+  renderDetails();
+  renderSelectionBar();
 
-  try {
-    const [stats, list] = await Promise.all([
-      api.stats(state.dir),
-      api.list(state.dir, state.categoryId),
-    ]);
-    state.stats = stats;
-    state.files = list.files;
-    setCategories(stats.categories);
-  } catch (err) {
-    toast(`读取失败：${err.message}`, { type: 'error' });
-    state.stats = null;
-    state.files = [];
-  } finally {
+  const result = await api.list(dir, { showHidden: !state.settings.skipHidden, refresh });
+  if (token !== navToken) return;
+
+  if (!result.ok) {
     state.loading = false;
-  }
-
-  renderAll();
-  renderSimilar(null);
-}
-
-async function runSearch(keyword) {
-  state.keyword = keyword.trim();
-  if (!state.dir) return;
-
-  if (!state.keyword) {
-    await refresh();
+    state.error = { kind: errorKind(result.code), message: result.error };
+    state.entries = [];
+    state.listing = null;
+    // 面包屑指向"用户想去但打不开"的位置，否则界面会显示成上一个目录出错
+    state.cwd = dir;
+    state.parentPath = parentOf(dir);
+    renderCrumbs();
+    renderSidebar();
+    renderList();
+    dom.titleMeta.textContent = t('app.openFailed');
     return;
   }
 
-  try {
-    const result = await api.search(state.dir, state.keyword);
-    state.files = result.hits;
-    renderHeading();
-    renderGrid();
-    renderSimilar(result);
-  } catch (err) {
-    toast(`搜索失败：${err.message}`, { type: 'error' });
+  const listing = result.data;
+  state.loading = false;
+  state.listing = listing;
+  state.cwd = listing.dir;
+  state.tagMap = listing.tags || {};
+  state.cloud = listing.cloud || null;
+  state.watching = listing.watching || null;
+
+  if (push) {
+    state.history = state.history.slice(0, state.hIndex + 1);
+    state.history.push(listing.dir);
+    state.hIndex = state.history.length - 1;
+  }
+
+  dom.titleMeta.textContent = `${listing.name} · ${t('app.items', {
+    n: listing.counts.files + listing.counts.dirs,
+  })}`;
+  renderCrumbs();
+  renderSidebar();
+  renderList({ resetScroll: true });
+  renderDetails();
+  updateNavButtons();
+  syncSearchNote();
+
+  // 实时监听跟着当前目录走
+  if (state.settings.watchEnabled) {
+    const watchResult = await api.watch(listing.dir, true);
+    if (watchResult.ok) state.watching = watchResult.data;
+    renderStatus();
+  } else {
+    api.watch(null, false);
+    state.watching = null;
   }
 }
 
-/* -------------------------------- 交互逻辑 ------------------------------- */
+function updateNavButtons() {
+  dom.btnBack.disabled = state.hIndex <= 0;
+  dom.btnForward.disabled = state.hIndex >= state.history.length - 1;
+  dom.btnUp.disabled = !state.listing?.parent;
+}
 
-let searchTimer = 0;
+function goBack() {
+  if (state.hIndex <= 0) return;
+  state.hIndex -= 1;
+  navigate(state.history[state.hIndex], { push: false });
+}
 
-function switchView(view) {
-  state.view = view;
-  dom.filesPanel.hidden = view !== 'files';
-  dom.settingsPanel.hidden = view !== 'settings';
-  dom.historyPanel.hidden = view !== 'history';
+function goForward() {
+  if (state.hIndex >= state.history.length - 1) return;
+  state.hIndex += 1;
+  navigate(state.history[state.hIndex], { push: false });
+}
 
-  for (const button of dom.utility.querySelectorAll('[data-view]')) {
-    button.classList.toggle('is-active', button.dataset.view === view);
-  }
-  for (const button of dom.nav.querySelectorAll('[data-category]')) {
-    button.classList.remove('is-active');
-  }
+function goUp() {
+  const target = state.listing?.parent || state.parentPath;
+  if (!target) return;
+  navigate(target);
+}
 
-  if (view === 'settings') {
-    dom.settingsPanel.innerHTML = settingsHtml(state, state.info);
+/* ------------------------------ 菜单 ------------------------------ */
+
+function showMenu(x, y, items) {
+  dom.menu.innerHTML = items
+    .map((item) =>
+      item.separator
+        ? '<div class="menu__sep"></div>'
+        : item.label && !item.action
+          ? `<div class="menu__label">${esc(item.label)}</div>`
+          : `<button class="menu__item${item.danger ? ' menu__item--danger' : ''}" data-menu-id="${item.id}">
+              ${item.icon ? icon(item.icon, 15) : '<span style="width:15px"></span>'}
+              <span>${esc(item.label)}</span>
+            </button>`,
+    )
+    .join('');
+
+  dom.menu.hidden = false;
+  const rect = dom.menu.getBoundingClientRect();
+  dom.menu.style.left = `${clamp(x, 8, window.innerWidth - rect.width - 8)}px`;
+  dom.menu.style.top = `${clamp(y, 8, window.innerHeight - rect.height - 8)}px`;
+
+  const close = () => {
+    dom.menu.hidden = true;
+    dom.menu.innerHTML = '';
+    window.removeEventListener('click', onOutside, true);
+    window.removeEventListener('blur', close);
+  };
+  const onOutside = (event) => {
+    if (!dom.menu.contains(event.target)) close();
+  };
+  window.addEventListener('click', onOutside, true);
+  window.addEventListener('blur', close);
+  dom.menu.onclick = (event) => {
+    const button = event.target.closest('[data-menu-id]');
+    if (!button) return;
+    const item = items.find((entry) => entry.id === button.dataset.menuId);
+    close();
+    item?.action?.();
+  };
+}
+
+function entryMenu(entry, x, y) {
+  const inSelection = state.checked.has(entry.path);
+  showMenu(x, y, [
+    { id: 'open', label: entry.isDir ? t('menu.openDir') : t('menu.open'), icon: 'open', action: () => openEntry(entry) },
+    { id: 'reveal', label: t('menu.reveal'), icon: 'locate', action: () => revealEntry(entry) },
+    { id: 'copy', label: t('menu.copy'), icon: 'copy', action: () => copyEntry(entry) },
+    { separator: true },
+    { id: 'preview', label: t('menu.preview'), icon: 'eye', action: () => select(entry) },
+    { id: 'tag', label: t('menu.tag'), icon: 'tag', action: () => openTagPicker(entry) },
+    { id: 'exclude', label: t('menu.exclude'), icon: 'lock', action: () => addExclude(entry.name) },
+    { separator: true },
+    {
+      id: 'batch',
+      label: t('menu.batch'),
+      icon: 'rename',
+      action: () => {
+        if (!inSelection) {
+          state.checked.add(entry.path);
+          renderSelectionBar();
+          list.refresh();
+        }
+        openBatch();
+      },
+    },
+    { id: 'organize', label: t('menu.organize'), icon: 'folder', action: () => openOrganize() },
+  ]);
+}
+
+async function openEntry(entry) {
+  if (!entry) return;
+  if (entry.isDir) return navigate(entry.path);
+  const result = await api.open(entry.path);
+  if (!result.ok) toast(result.error || t('toast.openFail'), { error: true });
+}
+
+async function revealEntry(entry) {
+  if (!entry) return;
+  const result = await api.reveal(entry.path);
+  if (!result.ok) toast(result.error || t('toast.failed'), { error: true });
+}
+
+async function copyEntry(entry) {
+  if (!entry) return;
+  const result = await api.copyPath(entry.path);
+  if (result.ok) toast(t('toast.copied'));
+  else toast(result.error || t('toast.failed'), { error: true });
+}
+
+/* ------------------------------ 搜索 ------------------------------ */
+
+function syncSearchNote() {
+  let note = dom.content.querySelector('.search-note');
+  if (!state.deep || !state.entries.length) {
+    if (note) note.remove();
+    return;
   }
-  if (view === 'history') {
-    renderHistory();
+  if (!note) {
+    note = document.createElement('div');
+    note.className = 'search-note';
+    dom.content.insertBefore(note, dom.tableHead);
   }
-  if (view === 'files') {
-    renderNav();
+  note.innerHTML = `${icon('search', 12)}<span>在子文件夹中找到 ${state.entries.length} 个结果</span>
+    <button data-search-act="clear">退出搜索</button>`;
+}
+
+const applyFilter = debounce(() => {
+  if (state.deep) return;
+  renderList({ resetScroll: true });
+}, 90);
+
+async function runDeepSearch() {
+  const keyword = dom.search.value.trim();
+  if (keyword.length < 2 || !state.cwd) return;
+  toast(t('toolbar.searching'), { duration: 1200 });
+  const result = await api.search(state.cwd, keyword);
+  if (!result.ok) {
+    toast(result.error || t('toast.failed'), { error: true });
+    return;
+  }
+  const rows = (result.data.hits || []).map((item) => ({
+    ...item,
+    isDir: Boolean(item.isDir),
+    ctime: item.ctime || item.mtime,
+    desc: item.desc || { label: '文件', category: 'other', brief: '搜索结果' },
+    tags: result.data.tags?.[item.path] || [],
+  }));
+  state.deep = { keyword, entries: rows };
+  state.query = '';
+  renderList({ resetScroll: true });
+  syncSearchNote();
+}
+
+function clearSearch() {
+  state.deep = null;
+  state.query = '';
+  dom.search.value = '';
+  syncSearchNote();
+  renderList({ resetScroll: true });
+}
+
+/* ------------------------------ 面板管理 ------------------------------ */
+
+function openDrawer(kind) {
+  state.panel = kind;
+  dom.drawer.classList.add('is-open');
+  dom.drawer.setAttribute('aria-hidden', 'false');
+  dom.scrim.classList.add('is-open');
+}
+
+function openModal(kind) {
+  state.panel = kind;
+  dom.modal.classList.add('is-open');
+  dom.modal.setAttribute('aria-hidden', 'false');
+  dom.scrim.classList.add('is-open');
+}
+
+function closePanel() {
+  state.panel = '';
+  dom.drawer.classList.remove('is-open');
+  dom.drawer.setAttribute('aria-hidden', 'true');
+  dom.modal.classList.remove('is-open');
+  dom.modal.setAttribute('aria-hidden', 'true');
+  dom.scrim.classList.remove('is-open');
+}
+
+function renderPanel() {
+  switch (state.panel) {
+    case 'organize':
+      dom.drawer.innerHTML = organizeHtml({
+        organize: state.organize,
+        cloudHint: state.organize.plan?.cloudHint || state.cloud?.name || '',
+        dir: state.cwd,
+      });
+      break;
+    case 'settings':
+      dom.modal.innerHTML = settingsHtml(state);
+      break;
+    case 'dupes':
+      dom.drawer.innerHTML = dupesHtml(state);
+      break;
+    case 'space':
+      dom.drawer.innerHTML = spaceHtml(state);
+      break;
+    case 'batch':
+      dom.drawer.innerHTML = batchHtml(state);
+      break;
+    case 'history':
+      dom.drawer.innerHTML = historyHtml(state);
+      break;
+    case 'tags':
+      dom.drawer.innerHTML = tagsHtml(state);
+      break;
+    default:
+      break;
   }
 }
 
-async function renderHistory() {
-  try {
-    const { items } = await api.history();
-    dom.historyPanel.innerHTML = historyHtml(items);
-  } catch (err) {
-    dom.historyPanel.innerHTML = historyHtml([]);
-    toast(`读取记录失败：${err.message}`, { type: 'error' });
+/* ------------------------------ 整理 ------------------------------ */
+
+async function openOrganize() {
+  if (!state.cwd) return;
+  state.organize = { loading: true, error: null, plan: null, selected: new Set(), busy: false, progress: null, expanded: new Set() };
+  openDrawer('organize');
+  renderPanel();
+
+  const result = await api.previewPlan(state.cwd);
+  state.organize.loading = false;
+  if (!result.ok) {
+    state.organize.error = result.error;
+    renderPanel();
+    return;
   }
+  state.organize.plan = result.data;
+  state.organize.selected = new Set(result.data.items.map((item) => item.name));
+  renderPanel();
 }
 
-async function pickFolder() {
-  try {
-    const { path } = await api.pickFolder();
-    if (path) {
-      switchView('files');
-      await loadFolder(path);
-    }
-  } catch (err) {
-    toast(`选择文件夹失败：${err.message}`, { type: 'error' });
+async function runOrganize() {
+  const selected = [...state.organize.selected];
+  if (!selected.length) return;
+  state.organize.busy = true;
+  state.organize.progress = { index: 0, total: selected.length, name: '' };
+  renderPanel();
+
+  const result = await api.execute(state.cwd, selected);
+  state.organize.busy = false;
+
+  if (!result.ok) {
+    state.organize.error = result.error;
+    renderPanel();
+    toast(result.error || t('toast.failed'), { error: true });
+    return;
   }
+
+  const { moved, failed } = result.data;
+  closePanel();
+  await navigate(state.cwd, { push: false, refresh: true, keepQuery: true });
+  const failedNote = failed?.length ? `，${failed.length} 个被占用未移动` : '';
+  toast(t('organize.done', { n: moved }) + failedNote, {
+    duration: 6000,
+    action: { label: t('organize.undo'), onClick: undoLast },
+  });
 }
 
 async function undoLast() {
-  try {
-    const result = await api.undo();
-    if (!result.restored) {
-      toast(result.message || '没有可撤销的记录', { type: 'warn' });
+  const result = await api.undo({});
+  if (!result.ok) {
+    toast(result.error || t('toast.failed'), { error: true });
+    return;
+  }
+  const count = result.data?.restored ?? 0;
+  await navigate(state.cwd, { push: false, refresh: true, keepQuery: true });
+  toast(count ? t('toast.undone', { n: count }) : t('toast.nothingUndo'));
+}
+
+/* ------------------------------ 重复文件 ------------------------------ */
+
+async function openDupes() {
+  state.dupes = { loading: true, progress: null, result: null, selected: new Set(), minSize: state.settings.dupesMinSize || 1024 };
+  openDrawer('dupes');
+  renderPanel();
+  await scanDupes();
+}
+
+async function scanDupes() {
+  state.dupes.loading = true;
+  state.dupes.progress = null;
+  state.dupes.result = null;
+  state.dupes.selected = new Set();
+  renderPanel();
+
+  const result = await api.dupes.scan(state.cwd, state.dupes.minSize);
+  state.dupes.loading = false;
+  if (!result.ok) {
+    toast(result.error || t('toast.failed'), { error: true });
+    state.dupes.result = { groups: [], totalWasted: 0, scanned: 0 };
+    renderPanel();
+    return;
+  }
+  state.dupes.result = result.data;
+  // 默认勾选每组除第一份（最老）之外的所有副本
+  const selected = new Set();
+  for (const group of result.data.groups) {
+    group.items.slice(1).forEach((item) => selected.add(item.path));
+  }
+  state.dupes.selected = selected;
+  renderPanel();
+}
+
+async function cleanDupes() {
+  const paths = [...state.dupes.selected];
+  if (!paths.length) return;
+  const result = await api.dupes.trash(paths);
+  if (!result.ok) {
+    toast(result.error || t('toast.failed'), { error: true });
+    return;
+  }
+  toast(t('dupes.done', { n: result.data.removed.length }));
+  await navigate(state.cwd, { push: false, refresh: true, keepQuery: true });
+  await scanDupes();
+}
+
+/* ------------------------------ 空间分析 ------------------------------ */
+
+async function openSpace() {
+  state.space = { loading: true, result: null, progress: null };
+  openDrawer('space');
+  renderPanel();
+  const result = await api.analyzeSpace(state.cwd);
+  state.space.loading = false;
+  if (!result.ok) {
+    toast(result.error || t('toast.failed'), { error: true });
+    state.space.result = null;
+    renderPanel();
+    return;
+  }
+  state.space.result = result.data;
+  renderPanel();
+}
+
+/* ------------------------------ 批量 ------------------------------ */
+
+function selectedEntries() {
+  return state.entries.filter((entry) => state.checked.has(entry.path) && !entry.isDir);
+}
+
+async function openBatch() {
+  const entries = selectedEntries();
+  if (!entries.length) {
+    toast(t('batch.noSelection'), { error: true });
+    return;
+  }
+  state.batch.names = entries.map((entry) => entry.name);
+  state.batch.totalSize = entries.reduce((sum, entry) => sum + entry.size, 0);
+  state.batch.preview = null;
+  openDrawer('batch');
+  renderPanel();
+  await refreshBatchPreview();
+}
+
+async function refreshBatchPreview() {
+  if (!state.batch.names.length) return;
+  const result = await api.batch.preview(state.cwd, state.batch.names, {
+    template: state.batch.template,
+    start: state.batch.start,
+    find: state.batch.find,
+    replace: state.batch.replace,
+  });
+  if (!result.ok) return;
+  state.batch.preview = result.data;
+  renderPanel();
+}
+
+async function runBatchRename() {
+  const result = await api.batch.rename(state.cwd, state.batch.names, {
+    template: state.batch.template,
+    start: state.batch.start,
+    find: state.batch.find,
+    replace: state.batch.replace,
+  });
+  if (!result.ok) {
+    toast(result.error || t('toast.failed'), { error: true });
+    return;
+  }
+  closePanel();
+  clearChecked();
+  await navigate(state.cwd, { push: false, refresh: true, keepQuery: true });
+  toast(t('batch.done', { n: result.data.renamed }), {
+    duration: 6000,
+    action: { label: t('organize.undo'), onClick: undoLast },
+  });
+}
+
+async function runArchive() {
+  const password = dom.drawer.querySelector('[data-batch="password"]')?.value || '';
+  const result = await api.batch.archive(state.cwd, state.batch.names, { password });
+  if (!result.ok) {
+    toast(result.error || t('toast.failed'), { error: true });
+    return;
+  }
+  const name = result.data.outPath.split('\\').pop();
+  toast(t('batch.archived', { name }));
+  await navigate(state.cwd, { push: false, refresh: true, keepQuery: true });
+}
+
+/* ------------------------------ 历史 ------------------------------ */
+
+async function openHistory() {
+  openDrawer('history');
+  renderPanel();
+  const result = await api.history(60);
+  state.historyList = result.ok ? result.data.items : [];
+  renderPanel();
+}
+
+/* ------------------------------ 标签 ------------------------------ */
+
+async function openTags() {
+  state.tagsPanel = { active: new Set(), matchAll: true, results: [] };
+  openDrawer('tags');
+  renderPanel();
+  await refreshTags();
+}
+
+async function refreshTags() {
+  const result = await api.tags.list();
+  if (result.ok) state.tagList = result.data.tags;
+  if (state.panel === 'tags') await refreshTagResults();
+  else renderPanel();
+}
+
+async function refreshTagResults() {
+  const ids = [...state.tagsPanel.active];
+  if (!ids.length) {
+    state.tagsPanel.results = [];
+    renderPanel();
+    return;
+  }
+  const result = await api.searchByTags(state.cwd, ids, state.tagsPanel.matchAll);
+  state.tagsPanel.results = result.ok ? result.data.hits : [];
+  renderPanel();
+}
+
+/** 标签选择弹层：定位在锚点元素下方 */
+function openTagPicker(entry, anchor) {
+  const rect = anchor?.getBoundingClientRect();
+  const owned = new Set((state.tagMap[entry.path] || entry.tags || []).map((tag) => tag.id));
+  showMenu(rect ? rect.left : 200, rect ? rect.bottom + 6 : 200, [
+    { label: t('detail.tags') },
+    ...(state.tagList || []).map((tag) => ({
+      id: `tag-${tag.id}`,
+      label: `${owned.has(tag.id) ? '✓ ' : ''}${tag.name}`,
+      icon: 'tag',
+      action: async () => {
+        const next = new Set(owned);
+        if (next.has(tag.id)) next.delete(tag.id);
+        else next.add(tag.id);
+        const result = await api.tags.set(entry.path, [...next]);
+        if (result.ok) {
+          state.tagMap = { ...state.tagMap, [entry.path]: result.data.tags };
+          entry.tags = result.data.tags;
+          renderDetails();
+          list.refresh();
+          refreshTags();
+          toast(t('toast.tagged'));
+        }
+      },
+    })),
+    { separator: true },
+    { id: 'manage', label: t('tags.manage'), icon: 'gear', action: () => openSettings('tags') },
+  ]);
+}
+
+async function addExclude(name) {
+  const excludes = [...(state.settings.excludes || [])];
+  if (excludes.some((item) => item.value === name)) {
+    toast('已经在排除名单里了');
+    return;
+  }
+  excludes.push({ id: `ex-${Date.now().toString(36)}`, value: name, kind: 'name', enabled: true });
+  const result = await api.settings.save({ excludes });
+  if (result.ok) {
+    state.settings.excludes = excludes;
+    toast(t('toast.excluded'));
+  }
+}
+
+/* ------------------------------ 设置 ------------------------------ */
+
+async function openSettings(tab) {
+  state.settingsTab = tab || state.settingsTab || 'appearance';
+  openModal('settings');
+  renderPanel();
+  await Promise.all([refreshTagList(), refreshPlugins(), refreshSchedule()]);
+  renderPanel();
+}
+
+async function refreshTagList() {
+  const result = await api.tags.list();
+  if (result.ok) state.tagList = result.data.tags;
+}
+
+async function refreshPlugins() {
+  const result = await api.plugins.list();
+  if (result.ok) state.pluginData = result.data;
+}
+
+async function refreshSchedule() {
+  const result = await api.schedule.status();
+  if (result.ok) state.scheduleStatus = result.data;
+}
+
+/** 保存设置后统一刷新本地状态 */
+async function saveSettings(patch, { rerender = true } = {}) {
+  const result = await api.settings.save(patch);
+  if (!result.ok) {
+    toast(result.error || t('toast.failed'), { error: true });
+    return null;
+  }
+  state.settings = result.data.settings;
+  state.categories = result.data.categories;
+  if (rerender) renderPanel();
+  return result.data;
+}
+
+/* ------------------------------ 事件：列表 ------------------------------ */
+
+dom.vcontent.addEventListener('click', (event) => {
+  const check = event.target.closest('[data-check]');
+  if (check) {
+    event.stopPropagation();
+    const target = check.dataset.check;
+    if (state.checked.has(target)) state.checked.delete(target);
+    else state.checked.add(target);
+    renderSelectionBar();
+    list.refresh();
+    return;
+  }
+
+  const action = event.target.closest('[data-act]');
+  const holder = event.target.closest('[data-path]');
+  if (!holder) {
+    select(null);
+    return;
+  }
+  const entry = state.entries.find((item) => item.path === holder.dataset.path);
+  if (!entry) return;
+
+  if (action) {
+    event.stopPropagation();
+    const act = action.dataset.act;
+    if (act === 'open') openEntry(entry);
+    else if (act === 'preview') select(entry);
+    else if (act === 'menu') {
+      const rect = action.getBoundingClientRect();
+      entryMenu(entry, rect.left, rect.bottom + 4);
+    }
+    return;
+  }
+
+  // Ctrl / Cmd 点选 = 多选；Shift 点选 = 连选
+  if (event.ctrlKey || event.metaKey) {
+    if (state.checked.has(entry.path)) state.checked.delete(entry.path);
+    else state.checked.add(entry.path);
+    renderSelectionBar();
+    list.refresh();
+    return;
+  }
+  if (event.shiftKey && state.selected) {
+    const from = state.entries.findIndex((item) => item.path === state.selected);
+    const to = state.entries.findIndex((item) => item.path === entry.path);
+    if (from >= 0 && to >= 0) {
+      for (let i = Math.min(from, to); i <= Math.max(from, to); i += 1) {
+        state.checked.add(state.entries[i].path);
+      }
+      renderSelectionBar();
+      list.refresh();
       return;
     }
-    toast(result.message || `已还原 ${result.restored} 个文件`, { type: 'ok' });
-    motion.bump(dom.btnUndo);
-    await refresh();
-    if (state.view === 'history') renderHistory();
-  } catch (err) {
-    toast(`撤销失败：${err.message}`, { type: 'error' });
-  }
-}
-
-async function saveCustomName(id, rawValue) {
-  const value = String(rawValue || '').trim();
-  const merged = { ...state.settings.customNames };
-  if (value) merged[id] = value;
-  else delete merged[id];
-
-  try {
-    const { settings, categories } = await api.saveSettings({ customNames: merged });
-    state.settings = settings;
-    setCategories(categories);
-    renderNav();
-    // 名称变了，网格里分类标签同步刷新
-    if (state.view === 'files') renderGrid({ animate: false });
-    toast(`已改名为「${categories.find((cat) => cat.id === id)?.name || value}」`, { type: 'ok', duration: 1800 });
-  } catch (err) {
-    toast(`保存失败：${err.message}`, { type: 'error' });
-  }
-}
-
-async function toggleFlag(flag, button) {
-  const next = !state.settings[flag];
-  try {
-    await api.saveSettings({ [flag]: next });
-    state.settings[flag] = next;
-    button.setAttribute('aria-checked', next ? 'true' : 'false');
-    motion.pulse(button);
-    if (flag === 'skipHidden') await refresh();
-  } catch (err) {
-    toast(`保存失败：${err.message}`, { type: 'error' });
-  }
-}
-
-async function setMotionLevel(level, container) {
-  try {
-    await api.saveSettings({ motionLevel: level });
-    state.settings.motionLevel = level;
-    motion.setLevel(level);
-    for (const button of container.querySelectorAll('[data-motion]')) {
-      button.classList.toggle('is-active', button.dataset.motion === level);
-    }
-    toast(level === 'off' ? '动效已关闭' : `动效强度：${level === 'soft' ? '轻柔' : '完整'}`, {
-      type: 'ok',
-      duration: 1600,
-    });
-  } catch (err) {
-    toast(`保存失败：${err.message}`, { type: 'error' });
-  }
-}
-
-function applySort(sortBy) {
-  if (state.sortBy === sortBy) return;
-  state.sortBy = sortBy;
-  api.saveSettings({ sortBy }).catch(() => {});
-
-  for (const button of dom.sortSeg.querySelectorAll('button')) {
-    button.classList.toggle('is-active', button.dataset.sort === sortBy);
   }
 
-  // FLIP：排序前后位置差做补间，避免列表硬跳
-  motion.flip(dom.grid, () => {
-    const sorted = [...state.files];
-    if (sortBy === 'name') sorted.sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
-    else if (sortBy === 'size') sorted.sort((a, b) => b.size - a.size);
-    else sorted.sort((a, b) => b.mtime - a.mtime);
-    state.files = sorted;
-    renderGrid({ animate: false });
+  select(entry);
+});
+
+dom.vcontent.addEventListener('dblclick', (event) => {
+  const holder = event.target.closest('[data-path]');
+  if (!holder) return;
+  const entry = state.entries.find((item) => item.path === holder.dataset.path);
+  if (entry) openEntry(entry);
+});
+
+dom.vcontent.addEventListener('contextmenu', (event) => {
+  const holder = event.target.closest('[data-path]');
+  if (!holder) return;
+  event.preventDefault();
+  const entry = state.entries.find((item) => item.path === holder.dataset.path);
+  if (!entry) return;
+  if (!state.checked.has(entry.path)) select(entry);
+  entryMenu(entry, event.clientX, event.clientY);
+});
+
+/** 缩略图失败兜底：换成分类图标，避免显示浏览器的碎图占位 */
+dom.vcontent.addEventListener(
+  'error',
+  (event) => {
+    if (!(event.target instanceof HTMLImageElement)) return;
+    const holder = event.target.closest('.file-ico');
+    if (!holder) return;
+    const holderPath = holder.closest('[data-path]')?.dataset.path;
+    const entry = state.entries.find((item) => item.path === holderPath);
+    if (!entry) return;
+    const size = holder.classList.contains('grid-card__thumb') ? 30 : 17;
+    holder.innerHTML = icon(categoryIcon(entry.desc?.category), size);
+    holder.dataset.tone = categoryTone(entry.desc?.category);
+  },
+  true,
+);
+
+/* ------------------------------ 事件：工具栏 ------------------------------ */
+
+dom.tableHead.addEventListener('click', (event) => {
+  const cell = event.target.closest('[data-sort]');
+  if (!cell) return;
+  const key = cell.dataset.sort;
+  if (state.sort.key === key) state.sort.dir = state.sort.dir === 'asc' ? 'desc' : 'asc';
+  else state.sort = { key, dir: key === 'name' ? 'asc' : 'desc' };
+  renderList();
+  api.settings.save({ sortBy: state.sort.key, sortDir: state.sort.dir });
+});
+
+dom.crumbs.addEventListener('click', (event) => {
+  const crumb = event.target.closest('[data-path]');
+  if (crumb) navigate(crumb.dataset.path);
+});
+
+for (const container of [dom.placeList, dom.driveList]) {
+  container.addEventListener('click', (event) => {
+    const place = event.target.closest('[data-path]');
+    if (place) navigate(place.dataset.path);
   });
 }
 
-function bindEvents() {
-  dom.pickFolder.addEventListener('click', pickFolder);
-  dom.btnPreview.addEventListener('click', () => openPreview(state, { refresh }));
+dom.btnBack.addEventListener('click', goBack);
+dom.btnForward.addEventListener('click', goForward);
+dom.btnUp.addEventListener('click', goUp);
+dom.btnRefresh.addEventListener('click', () => navigate(state.cwd, { push: false, refresh: true, keepQuery: true }));
+dom.btnTheme.addEventListener('click', cycleTheme);
+dom.btnList.addEventListener('click', () => setView('list'));
+dom.btnGrid.addEventListener('click', () => setView('grid'));
 
-  dom.btnUndo.addEventListener('click', () => {
-    // 原则 2：按下先有个极短的预备，再执行
-    motion.anticipate(dom.btnUndo, undoLast);
-  });
-
-  dom.nav.addEventListener('click', async (event) => {
-    const button = event.target.closest('[data-category]');
-    if (!button) return;
-    state.categoryId = button.dataset.category || null;
-    state.keyword = '';
-    dom.search.value = '';
-    renderNav();
-    await refresh();
-  });
-
-  dom.utility.addEventListener('click', (event) => {
-    const button = event.target.closest('[data-view]');
-    if (button) switchView(button.dataset.view);
-  });
-
-  // 单击定位到所在文件夹，双击直接打开
-  dom.grid.addEventListener('click', (event) => {
-    const card = event.target.closest('.card');
-    if (!card) return;
-    api.reveal(card.dataset.path).catch((err) => toast(err.message, { type: 'error' }));
-  });
-  dom.grid.addEventListener('dblclick', (event) => {
-    const card = event.target.closest('.card');
-    if (card) api.open(card.dataset.path).catch((err) => toast(err.message, { type: 'error' }));
-  });
-
-  dom.grid.addEventListener('pointermove', (event) => {
-    const card = event.target.closest('.card');
-    if (card) motion.lightFollow(card, event);
-  });
-
-  dom.similarList.addEventListener('click', (event) => {
-    const chip = event.target.closest('.chip');
-    if (chip) api.reveal(chip.dataset.path).catch(() => {});
-  });
-
-  dom.search.addEventListener('input', () => {
-    window.clearTimeout(searchTimer);
-    searchTimer = window.setTimeout(() => runSearch(dom.search.value), 260);
-  });
-  dom.search.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') {
-      window.clearTimeout(searchTimer);
-      runSearch(dom.search.value);
-    }
-    if (event.key === 'Escape') {
-      dom.search.value = '';
-      runSearch('');
-    }
-  });
-
-  dom.sortSeg.addEventListener('click', (event) => {
-    const button = event.target.closest('button[data-sort]');
-    if (button) applySort(button.dataset.sort);
-  });
-
-  // 设置面板：改名 / 开关 / 动效强度
-  dom.settingsPanel.addEventListener('change', (event) => {
-    const input = event.target.closest('input[data-name-id]');
-    if (input) saveCustomName(input.dataset.nameId, input.value);
-  });
-  dom.settingsPanel.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' && event.target.matches('input[data-name-id]')) event.target.blur();
-  });
-  dom.settingsPanel.addEventListener('click', (event) => {
-    const toggle = event.target.closest('.toggle[data-flag]');
-    if (toggle) {
-      toggleFlag(toggle.dataset.flag, toggle);
-      return;
-    }
-    const motionButton = event.target.closest('[data-motion]');
-    if (motionButton) setMotionLevel(motionButton.dataset.motion, motionButton.parentElement);
-  });
-
-  document.addEventListener('keydown', (event) => {
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
-      event.preventDefault();
-      dom.search.focus();
-      dom.search.select();
-    }
-    if (event.key === 'Escape' && !document.getElementById('previewSheet').hidden) {
-      document.getElementById('cancelPreview').click();
-    }
-  });
+async function setView(view) {
+  if (state.view === view) return;
+  state.view = view;
+  dom.btnList.classList.toggle('is-active', view === 'list');
+  dom.btnGrid.classList.toggle('is-active', view === 'grid');
+  renderList();
+  await api.settings.save({ viewMode: view });
 }
 
-/* --------------------------------- 启动 --------------------------------- */
+dom.btnDetail.addEventListener('click', async () => {
+  state.detailOpen = !state.detailOpen;
+  dom.details.classList.toggle('is-collapsed', !state.detailOpen);
+  dom.btnDetail.classList.toggle('is-active', state.detailOpen);
+  await api.settings.save({ detailOpen: state.detailOpen });
+  list.schedule();
+});
 
-async function bootstrap() {
-  cacheDom();
-  try {
-    const { settings, categories } = await api.getSettings();
-    state.settings = settings;
-    state.sortBy = settings.sortBy;
-    setCategories(categories);
-    motion.setLevel(settings.motionLevel);
+dom.search.addEventListener('input', () => {
+  state.query = dom.search.value;
+  if (state.deep) {
+    state.deep = null;
+    syncSearchNote();
+  }
+  applyFilter();
+});
 
-    for (const button of dom.sortSeg.querySelectorAll('button')) {
-      button.classList.toggle('is-active', button.dataset.sort === state.sortBy);
+dom.search.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') runDeepSearch();
+  if (event.key === 'Escape') clearSearch();
+});
+
+dom.content.addEventListener('click', (event) => {
+  const act = event.target.closest('[data-state-act]');
+  if (act) {
+    const kind = act.dataset.stateAct;
+    if (kind === 'retry') navigate(state.cwd, { push: false, refresh: true, keepQuery: true });
+    else if (kind === 'up') goUp();
+    else if (kind === 'clear') clearSearch();
+    return;
+  }
+  if (event.target.closest('[data-search-act="clear"]')) clearSearch();
+});
+
+/* 选择条 */
+dom.selectionBar.addEventListener('click', async (event) => {
+  const act = event.target.closest('[data-sel-act]');
+  if (!act) return;
+  const kind = act.dataset.selAct;
+  if (kind === 'clear') return clearChecked();
+  if (kind === 'batch') return openBatch();
+  if (kind === 'archive') return openBatch();
+  if (kind === 'tag') {
+    const entries = selectedEntries();
+    if (!entries.length) return;
+    openTagPicker(entries[0], act);
+    return;
+  }
+  if (kind === 'exclude') {
+    for (const entry of selectedEntries()) await addExclude(entry.name);
+    clearChecked();
+  }
+});
+
+/* ------------------------------ 事件：详情 ------------------------------ */
+
+dom.details.addEventListener('click', async (event) => {
+  const tagRemove = event.target.closest('[data-tag-remove]');
+  if (tagRemove) {
+    const entry = state.selectedEntry;
+    if (!entry) return;
+    const result = await api.tags.removeFrom([entry.path], [tagRemove.dataset.tagRemove]);
+    if (result.ok) {
+      state.tagMap = { ...state.tagMap, [entry.path]: result.data.map?.[entry.path] || [] };
+      renderDetails();
+      list.refresh();
+      refreshTags();
     }
+    return;
+  }
+  if (event.target.closest('[data-tag-add]')) {
+    if (state.selectedEntry) openTagPicker(state.selectedEntry, event.target.closest('[data-tag-add]'));
+    return;
+  }
 
-    state.info = await api.info();
-    bindEvents();
-    renderNav();
+  const act = event.target.closest('[data-detail-act]');
+  if (!act) return;
+  const entry = state.selectedEntry;
+  if (!entry) return;
+  if (act.dataset.detailAct === 'open') openEntry(entry);
+  else if (act.dataset.detailAct === 'reveal') revealEntry(entry);
+  else if (act.dataset.detailAct === 'copy') copyEntry(entry);
+});
 
-    if (settings.lastFolder) {
-      await loadFolder(settings.lastFolder);
+dom.details.addEventListener(
+  'error',
+  (event) => {
+    if (!(event.target instanceof HTMLImageElement)) return;
+    event.target.replaceWith(
+      Object.assign(document.createElement('span'), {
+        className: 'preview-empty',
+        textContent: t('preview.unsupported'),
+      }),
+    );
+  },
+  true,
+);
+
+/* ------------------------------ 事件：抽屉 ------------------------------ */
+
+dom.drawer.addEventListener('click', async (event) => {
+  /* 整理 */
+  const orgCheck = event.target.closest('[data-org-check]');
+  if (orgCheck) {
+    const name = orgCheck.dataset.orgCheck;
+    if (state.organize.selected.has(name)) state.organize.selected.delete(name);
+    else state.organize.selected.add(name);
+    renderPanel();
+    return;
+  }
+  const orgGroup = event.target.closest('[data-org-group]');
+  if (orgGroup) {
+    const folder = orgGroup.dataset.orgGroup;
+    const items = (state.organize.plan?.items || []).filter((item) => item.folder === folder);
+    const allIn = items.every((item) => state.organize.selected.has(item.name));
+    for (const item of items) {
+      if (allIn) state.organize.selected.delete(item.name);
+      else state.organize.selected.add(item.name);
+    }
+    renderPanel();
+    return;
+  }
+  const orgAct = event.target.closest('[data-org-act]');
+  if (orgAct) {
+    const kind = orgAct.dataset.orgAct;
+    if (kind === 'close') closePanel();
+    else if (kind === 'run') runOrganize();
+    else if (kind === 'expand') {
+      const folder = orgAct.dataset.folder;
+      if (state.organize.expanded.has(folder)) state.organize.expanded.delete(folder);
+      else state.organize.expanded.add(folder);
+      renderPanel();
+    } else if (kind === 'toggle-all') {
+      const items = state.organize.plan?.items || [];
+      if (state.organize.selected.size === items.length) state.organize.selected.clear();
+      else state.organize.selected = new Set(items.map((item) => item.name));
+      renderPanel();
+    }
+    return;
+  }
+
+  /* 重复文件 */
+  const dupeCheck = event.target.closest('[data-dupe-check]');
+  if (dupeCheck) {
+    const target = dupeCheck.dataset.dupeCheck;
+    if (state.dupes.selected.has(target)) state.dupes.selected.delete(target);
+    else state.dupes.selected.add(target);
+    renderPanel();
+    return;
+  }
+  const dupeAct = event.target.closest('[data-dupe-act]');
+  if (dupeAct) {
+    const kind = dupeAct.dataset.dupeAct;
+    if (kind === 'close') closePanel();
+    else if (kind === 'scan') scanDupes();
+    else if (kind === 'clean') cleanDupes();
+    return;
+  }
+
+  /* 空间 */
+  const spaceAct = event.target.closest('[data-space-act]');
+  if (spaceAct) {
+    if (spaceAct.dataset.spaceAct === 'close') closePanel();
+    else if (spaceAct.dataset.spaceAct === 'refresh') openSpace();
+    return;
+  }
+
+  /* 批量 */
+  const batchAct = event.target.closest('[data-batch-act]');
+  if (batchAct) {
+    const kind = batchAct.dataset.batchAct;
+    if (kind === 'close') closePanel();
+    else if (kind === 'rename') runBatchRename();
+    else if (kind === 'archive') runArchive();
+    return;
+  }
+
+  /* 历史 */
+  const histAct = event.target.closest('[data-hist-act]');
+  if (histAct) {
+    const kind = histAct.dataset.histAct;
+    if (kind === 'close') closePanel();
+    else if (kind === 'clear') {
+      await api.clearHistory();
+      await openHistory();
+    } else if (kind === 'undo5') {
+      const result = await api.undo({ count: 5 });
+      if (result.ok) {
+        toast(t('toast.undone', { n: result.data.restored }));
+        await navigate(state.cwd, { push: false, refresh: true, keepQuery: true });
+        await openHistory();
+      }
+    } else if (kind === 'undo' || kind === 'redo') {
+      const result = kind === 'undo'
+        ? await api.undo({ file: histAct.dataset.file })
+        : await api.redo({ file: histAct.dataset.file });
+      if (result.ok) {
+        toast(t('toast.undone', { n: result.data.restored }));
+        await navigate(state.cwd, { push: false, refresh: true, keepQuery: true });
+        await openHistory();
+      }
+    }
+    return;
+  }
+
+  /* 标签面板 */
+  const tagPick = event.target.closest('[data-tag-pick]');
+  if (tagPick) {
+    const id = tagPick.dataset.tagPick;
+    if (state.tagsPanel.active.has(id)) state.tagsPanel.active.delete(id);
+    else state.tagsPanel.active.add(id);
+    await refreshTagResults();
+    return;
+  }
+  const tagMode = event.target.closest('[data-tags-mode]');
+  if (tagMode) {
+    state.tagsPanel.matchAll = tagMode.dataset.tagsMode === 'all';
+    await refreshTagResults();
+    return;
+  }
+  if (event.target.closest('[data-tags-act="close"]')) {
+    closePanel();
+    return;
+  }
+  const resultItem = event.target.closest('.tag-result-item');
+  if (resultItem) {
+    const target = resultItem.dataset.path;
+    await navigate(target.replace(/\\[^\\]+$/, ''));
+    return;
+  }
+});
+
+/* 批量面板的输入框 */
+dom.drawer.addEventListener('change', async (event) => {
+  const field = event.target.closest('[data-batch]');
+  if (!field) return;
+  const key = field.dataset.batch;
+  if (key === 'password') return;
+  state.batch[key] = key === 'start' ? Number(field.value) || 1 : field.value;
+  await refreshBatchPreview();
+});
+
+/* ------------------------------ 事件：设置弹窗 ------------------------------ */
+
+dom.modal.addEventListener('click', async (event) => {
+  const tab = event.target.closest('[data-set-tab]');
+  if (tab) {
+    state.settingsTab = tab.dataset.setTab;
+    renderPanel();
+    return;
+  }
+
+  const segment = event.target.closest('[data-segment] button');
+  if (segment) {
+    const holder = segment.closest('[data-segment]');
+    const name = holder.dataset.segment;
+    const value = segment.dataset.value;
+    for (const sibling of holder.children) sibling.classList.remove('is-active');
+    segment.classList.add('is-active');
+
+    if (name === 'theme') {
+      state.theme = value;
+      applyTheme();
+      await api.settings.save({ theme: value });
+    } else if (name === 'motion') {
+      state.settings.motionLevel = value;
+      applyMotion(value);
+      await api.settings.save({ motionLevel: value });
+    } else if (name === 'lang') {
+      setLang(value);
+      state.settings.lang = value;
+      document.documentElement.lang = value === 'en' ? 'en' : 'zh-CN';
+      await api.settings.save({ lang: value });
+      applyStaticI18n();
+      renderSidebar();
+      renderCrumbs();
+      renderList();
+      renderDetails();
+      renderPanel();
+    } else if (name === 'mode') {
+      state.settings.mode = value;
+      document.documentElement.dataset.mode = value;
+      await api.setMode(value);
+    } else if (name === 'sidebarSide') {
+      state.settings.sidebarSide = value;
+      await api.setSide(value);
+    } else if (name === 'freq') {
+      await saveSettings({ schedule: { ...state.settings.schedule, freq: value } });
+      await refreshSchedule();
+      renderPanel();
+    }
+    return;
+  }
+
+  const toggle = event.target.closest('[data-toggle]');
+  if (toggle) {
+    const key = toggle.dataset.toggle;
+    const on = !toggle.classList.contains('is-on');
+    if (key.startsWith('schedule.')) {
+      const field = key.split('.')[1];
+      await saveSettings({ schedule: { ...state.settings.schedule, [field]: on } }, { rerender: false });
     } else {
-      renderAll();
+      state.settings[key] = on;
+      await api.settings.save({ [key]: on });
+      if (key === 'cursorGlow') {
+        document.documentElement.classList.toggle('glow-off', !on);
+        dom.glow.classList.toggle('is-on', on && lastPointer.inside);
+      }
+      if (key === 'skipHidden') await navigate(state.cwd, { push: false, refresh: true, keepQuery: true });
+      if (key === 'watchEnabled' && !on) api.watch(null, false);
     }
-  } catch (err) {
-    toast(`启动失败：${err.message}`, { type: 'error', duration: 6000 });
+    renderPanel();
+    return;
+  }
+
+  const ruleAct = event.target.closest('[data-rule-act]');
+  if (ruleAct) {
+    const kind = ruleAct.dataset.ruleAct;
+    const id = ruleAct.dataset.ruleId;
+    const rules = [...(state.settings.customRules || [])];
+    const index = rules.findIndex((rule) => rule.id === id);
+    if (index < 0) return;
+
+    if (kind === 'delete') rules.splice(index, 1);
+    else if (kind === 'toggle') rules[index] = { ...rules[index], enabled: rules[index].enabled === false };
+    else if (kind === 'add-cond') {
+      rules[index] = {
+        ...rules[index],
+        conditions: [...rules[index].conditions, { field: 'name', op: 'contains', value: '' }],
+      };
+    } else if (kind === 'del-cond') {
+      const ci = Number(ruleAct.dataset.condIndex);
+      const conditions = rules[index].conditions.filter((_item, i) => i !== ci);
+      if (!conditions.length) return;
+      rules[index] = { ...rules[index], conditions };
+    }
+
+    await saveSettings({ customRules: rules });
+    return;
+  }
+
+  const setAct = event.target.closest('[data-set-act]');
+  if (setAct) {
+    const kind = setAct.dataset.setAct;
+    if (kind === 'close') return closePanel();
+
+    if (kind === 'add-rule') {
+      const rules = [
+        ...(state.settings.customRules || []),
+        {
+          id: `rule-${Date.now().toString(36)}`,
+          name: '新规则',
+          enabled: true,
+          target: '',
+          conditions: [{ field: 'name', op: 'contains', value: '' }],
+        },
+      ];
+      await saveSettings({ customRules: rules });
+      return;
+    }
+
+    if (kind === 'add-exclude') {
+      const excludes = [
+        ...(state.settings.excludes || []),
+        { id: `ex-${Date.now().toString(36)}`, value: '新排除项', kind: 'contains', enabled: true },
+      ];
+      await saveSettings({ excludes });
+      return;
+    }
+
+    if (kind === 'preset-exclude') {
+      const excludes = [...(state.settings.excludes || [])];
+      const value = setAct.dataset.value;
+      if (!excludes.some((item) => item.value === value)) {
+        excludes.push({ id: `ex-${Date.now().toString(36)}`, value, kind: setAct.dataset.kind, enabled: true });
+        await saveSettings({ excludes });
+      }
+      return;
+    }
+
+    if (kind === 'del-exclude') {
+      const id = setAct.dataset.excludeId;
+      await saveSettings({ excludes: (state.settings.excludes || []).filter((item) => item.id !== id) });
+      return;
+    }
+
+    if (kind === 'add-dir') {
+      const picked = await api.pickFolder('选择要定时整理的文件夹');
+      if (!picked.ok || !picked.data.path) return;
+      const dirs = [...new Set([...(state.settings.schedule.dirs || []), picked.data.path])];
+      await saveSettings({ schedule: { ...state.settings.schedule, dirs } });
+      await refreshSchedule();
+      renderPanel();
+      return;
+    }
+
+    if (kind === 'remove-dir') {
+      const dir = setAct.dataset.dir;
+      const dirs = (state.settings.schedule.dirs || []).filter((item) => item !== dir);
+      await saveSettings({ schedule: { ...state.settings.schedule, dirs } });
+      await refreshSchedule();
+      renderPanel();
+      return;
+    }
+
+    if (kind === 'run-schedule') {
+      const result = await api.schedule.runNow();
+      if (result.ok) toast(t('organize.done', { n: result.data.moved || 0 }));
+      else toast(result.error || t('toast.failed'), { error: true });
+      await refreshSchedule();
+      renderPanel();
+      return;
+    }
+
+    if (kind === 'add-tag') {
+      const input = dom.modal.querySelector('[data-tag-name]');
+      const name = input?.value.trim();
+      if (!name) return;
+      const result = await api.tags.create(name);
+      if (!result.ok) {
+        toast(result.error || t('toast.failed'), { error: true });
+        return;
+      }
+      state.tagList = result.data.tags;
+      renderPanel();
+      return;
+    }
+
+    if (kind === 'del-tag') {
+      const result = await api.tags.remove(setAct.dataset.tagId);
+      if (result.ok) state.tagList = result.data.tags;
+      renderPanel();
+      return;
+    }
+
+    if (kind === 'open-plugins') {
+      await api.plugins.openDir();
+      return;
+    }
+
+    if (kind === 'reload-plugins') {
+      await refreshPlugins();
+      renderPanel();
+      toast(t('toast.saved'));
+      return;
+    }
+
+    if (kind === 'toggle-plugin') {
+      const file = setAct.dataset.file;
+      const enabled = new Set(state.pluginData.enabled || []);
+      if (enabled.has(file)) enabled.delete(file);
+      else enabled.add(file);
+      await saveSettings({ plugins: [...enabled] }, { rerender: false });
+      await refreshPlugins();
+      renderPanel();
+      return;
+    }
+
+    if (kind === 'open-data') {
+      const info = state.info;
+      if (info.userData) await api.open(info.userData);
+      return;
+    }
+
+    if (kind === 'open-repo') {
+      await api.openExternal('https://github.com/');
+      return;
+    }
+  }
+});
+
+/** 设置里的输入项：失焦才提交，避免重绘打断输入 */
+dom.modal.addEventListener('change', async (event) => {
+  const catInput = event.target.closest('[data-cat]');
+  if (catInput) {
+    const id = catInput.dataset.cat;
+    const value = catInput.value.trim();
+    await saveSettings({ customNames: { [id]: value } }, { rerender: false });
+    return;
+  }
+
+  const ruleName = event.target.closest('[data-rule-name]');
+  if (ruleName) {
+    const id = ruleName.dataset.ruleName;
+    const rules = (state.settings.customRules || []).map((rule) =>
+      rule.id === id ? { ...rule, name: ruleName.value.trim() || rule.target } : rule,
+    );
+    await saveSettings({ customRules: rules });
+    return;
+  }
+
+  const ruleTarget = event.target.closest('[data-rule-target]');
+  if (ruleTarget) {
+    const id = ruleTarget.dataset.ruleTarget;
+    const rules = (state.settings.customRules || []).map((rule) =>
+      rule.id === id ? { ...rule, target: ruleTarget.value.trim() } : rule,
+    );
+    await saveSettings({ customRules: rules });
+    return;
+  }
+
+  const condRow = event.target.closest('.rule-cond');
+  if (condRow) {
+    const card = condRow.closest('[data-rule-id]');
+    const id = card?.dataset.ruleId;
+    const index = Number(condRow.dataset.condIndex);
+    const rules = JSON.parse(JSON.stringify(state.settings.customRules || []));
+    const rule = rules.find((item) => item.id === id);
+    if (!rule) return;
+    const cond = rule.conditions[index];
+    if (!cond) return;
+
+    if (event.target.matches('[data-cond-field]')) {
+      cond.field = event.target.value;
+      // 字段换了，原来的比较方式可能不适用，换成第一个合法的
+      const allowed = { name: 'contains', ext: 'equals', size: 'gt', mtime: 'within', ctime: 'within' };
+      cond.op = allowed[cond.field] || 'contains';
+    } else if (event.target.matches('[data-cond-op]')) {
+      cond.op = event.target.value;
+    } else if (event.target.matches('[data-cond-value]')) {
+      cond.value = cond.field === 'size' || cond.field === 'mtime' || cond.field === 'ctime'
+        ? Number(event.target.value)
+        : event.target.value;
+    } else if (event.target.matches('[data-cond-value2]')) {
+      cond.value2 = Number(event.target.value);
+    }
+    await saveSettings({ customRules: rules });
+    return;
+  }
+
+  const excludeValue = event.target.closest('[data-exclude-value]');
+  if (excludeValue) {
+    const id = excludeValue.closest('[data-exclude-id]')?.dataset.excludeId;
+    const excludes = (state.settings.excludes || []).map((item) =>
+      item.id === id ? { ...item, value: excludeValue.value.trim() } : item,
+    );
+    await saveSettings({ excludes });
+    return;
+  }
+
+  const excludeKind = event.target.closest('[data-exclude-kind]');
+  if (excludeKind) {
+    const id = excludeKind.closest('[data-exclude-id]')?.dataset.excludeId;
+    const excludes = (state.settings.excludes || []).map((item) =>
+      item.id === id ? { ...item, kind: excludeKind.value } : item,
+    );
+    await saveSettings({ excludes });
+    return;
+  }
+
+  const scheduleField = event.target.closest('[data-schedule]');
+  if (scheduleField) {
+    const field = scheduleField.dataset.schedule;
+    const raw = Number(scheduleField.value);
+    const value = field === 'hour' ? clamp(raw, 0, 23) : field === 'minute' ? clamp(raw, 0, 59) : clamp(raw, 1, 7);
+    await saveSettings({ schedule: { ...state.settings.schedule, [field]: value } }, { rerender: false });
+    await refreshSchedule();
+    renderPanel();
+  }
+});
+
+dom.modal.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' && event.target.matches('[data-tag-name]')) {
+    event.preventDefault();
+    dom.modal.querySelector('[data-set-act="add-tag"]')?.click();
+  }
+});
+
+/* ------------------------------ 遮罩 / 键盘 ------------------------------ */
+
+dom.scrim.addEventListener('click', closePanel);
+
+document.querySelector('.wincontrols').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-win]');
+  if (button) api.win(button.dataset.win);
+});
+
+window.addEventListener('resize', debounce(() => {
+  if (state.view === 'grid') renderList();
+  else {
+    updateGutter();
+    list.schedule();
+  }
+  renderCrumbs();
+}, 140));
+
+window.addEventListener('keydown', (event) => {
+  const inInput = event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement;
+  if (event.key === 'Escape') {
+    if (!dom.menu.hidden) {
+      dom.menu.hidden = true;
+      return;
+    }
+    if (state.panel) return closePanel();
+    if (inInput) {
+      dom.search.blur();
+      clearSearch();
+    } else if (state.checked.size) {
+      clearChecked();
+    }
+    return;
+  }
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
+    event.preventDefault();
+    dom.search.focus();
+    dom.search.select();
+    return;
+  }
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+    event.preventDefault();
+    undoLast();
+    return;
+  }
+  if (inInput) return;
+
+  const index = state.selected ? state.entries.findIndex((item) => item.path === state.selected) : -1;
+
+  if (event.key === 'ArrowDown') {
+    event.preventDefault();
+    const next = state.entries[Math.min(state.entries.length - 1, index + 1)];
+    if (next) select(next, { scroll: true, index: Math.min(state.entries.length - 1, index + 1) });
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault();
+    const nextIndex = Math.max(0, index <= 0 ? 0 : index - 1);
+    const next = state.entries[nextIndex];
+    if (next) select(next, { scroll: true, index: nextIndex });
+  } else if (event.key === 'Enter') {
+    event.preventDefault();
+    if (state.selectedEntry) openEntry(state.selectedEntry);
+  } else if (event.key === 'F5') {
+    event.preventDefault();
+    navigate(state.cwd, { push: false, refresh: true, keepQuery: true });
+  } else if (event.key === 'Backspace') {
+    if (state.query) return;
+    event.preventDefault();
+    goUp();
+  } else if (event.altKey && event.key === 'ArrowLeft') {
+    event.preventDefault();
+    goBack();
+  } else if (event.key === ' ') {
+    event.preventDefault();
+    if (state.selected) {
+      if (state.checked.has(state.selected)) state.checked.delete(state.selected);
+      else state.checked.add(state.selected);
+      renderSelectionBar();
+      list.refresh();
+    }
+  }
+});
+
+/* ------------------------------ 鼠标光影 ------------------------------ */
+
+const lastPointer = { inside: false, x: 0, y: 0 };
+let glowFrame = 0;
+
+window.addEventListener('mousemove', (event) => {
+  if (!state.settings.cursorGlow) return;
+  lastPointer.inside = true;
+  lastPointer.x = event.clientX;
+  lastPointer.y = event.clientY;
+  dom.glow.classList.add('is-on');
+  if (glowFrame) return;
+  glowFrame = requestAnimationFrame(() => {
+    glowFrame = 0;
+    dom.glow.style.transform = `translate3d(${lastPointer.x}px, ${lastPointer.y}px, 0)`;
+  });
+});
+
+window.addEventListener('mouseleave', () => {
+  lastPointer.inside = false;
+  dom.glow.classList.remove('is-on');
+});
+
+/* ------------------------------ 工具入口 ------------------------------ */
+
+$('btnOrganize').addEventListener('click', openOrganize);
+$('btnSettings').addEventListener('click', () => openSettings());
+$('btnDupes').addEventListener('click', openDupes);
+$('btnSpace').addEventListener('click', openSpace);
+$('btnBatch').addEventListener('click', openBatch);
+$('btnHistory').addEventListener('click', openHistory);
+$('btnTags').addEventListener('click', openTags);
+
+/* 主进程事件 */
+api.onProgress((progress) => {
+  state.organize.progress = progress;
+  const bar = dom.drawer.querySelector('.progress__bar');
+  if (bar) bar.style.width = `${Math.round((progress.index / Math.max(1, progress.total)) * 100)}%`;
+});
+
+api.onDupesProgress((progress) => {
+  state.dupes.progress = progress;
+  if (state.panel === 'dupes') {
+    const note = dom.drawer.querySelector('.empty-note');
+    if (note && progress.message) note.textContent = progress.message;
+    const bar = dom.drawer.querySelector('.progress__bar');
+    if (bar && progress.total) bar.style.width = `${Math.round((progress.done / progress.total) * 100)}%`;
+  }
+});
+
+api.onSpaceProgress((progress) => {
+  state.space.progress = progress;
+  if (state.panel === 'space') renderPanel();
+});
+
+/** 文件系统有变化：只刷新可见目录，别的地方不用管 */
+api.onFsChanged((payload) => {
+  if (!payload?.dir || !isSamePath(payload.dir, state.cwd)) return;
+  if (state.loading) return;
+  navigate(state.cwd, { push: false, refresh: true, keepQuery: true });
+});
+
+api.onModeChanged(({ mode }) => {
+  const previous = document.documentElement.dataset.mode;
+  document.documentElement.dataset.mode = mode;
+  state.settings.mode = mode;
+
+  /**
+   * 悬浮挂件只有 460×340，网格一屏露不出两行，列表才看得清。
+   * 这里只在进入/离开悬浮模式时临时换视图，不动用户存下的 viewMode 偏好。
+   */
+  if (mode === 'dock' && state.view !== 'list') {
+    state.dockView = state.view;
+    state.view = 'list';
+    dom.btnList.classList.add('is-active');
+    dom.btnGrid.classList.remove('is-active');
+    renderList();
+  } else if (previous === 'dock' && mode !== 'dock' && state.dockView) {
+    state.view = state.dockView;
+    state.dockView = '';
+    dom.btnList.classList.toggle('is-active', state.view === 'list');
+    dom.btnGrid.classList.toggle('is-active', state.view === 'grid');
+    renderList();
+  }
+
+  if (state.panel === 'settings') renderPanel();
+  list.schedule();
+});
+
+api.onTrayAction((payload) => {
+  if (payload?.action === 'scheduled') {
+    navigate(state.cwd, { push: false, refresh: true, keepQuery: true });
+    toast(t('organize.done', { n: payload.result?.moved || 0 }));
+  }
+});
+
+/* ------------------------------ 启动 ------------------------------ */
+
+document.documentElement.dataset.mode = 'window';
+
+async function boot() {
+  const [settingsResult, placesResult, infoResult, tagsResult] = await Promise.all([
+    api.settings.get(),
+    api.places(),
+    api.info(),
+    api.tags.list(),
+  ]);
+
+  if (settingsResult.ok) {
+    state.settings = settingsResult.data.settings;
+    state.categories = settingsResult.data.categories;
+    state.ruleMeta = settingsResult.data.ruleMeta || { fields: {}, ops: {} };
+    state.defaultExcludes = settingsResult.data.defaultExcludes || [];
+    state.sort = { key: state.settings.sortBy || 'name', dir: state.settings.sortDir || 'asc' };
+    state.view = state.settings.viewMode || 'list';
+    state.theme = state.settings.theme || 'system';
+    state.detailOpen = state.settings.detailOpen !== false;
+    setLang(state.settings.lang || 'zh');
+  }
+  if (placesResult.ok) {
+    state.places = placesResult.data.places;
+    state.drives = placesResult.data.drives;
+    state.clouds = placesResult.data.clouds || [];
+  }
+  if (infoResult.ok) state.info = infoResult.data;
+  if (tagsResult.ok) state.tagList = tagsResult.data.tags;
+
+  document.documentElement.lang = getLang() === 'en' ? 'en' : 'zh-CN';
+  document.documentElement.dataset.mode = state.settings.mode || 'window';
+  applyStaticI18n();
+  applyTheme(false);
+  applyMotion(state.settings.motionLevel || 'full');
+  dom.btnList.classList.toggle('is-active', state.view === 'list');
+  dom.btnGrid.classList.toggle('is-active', state.view === 'grid');
+  dom.details.classList.toggle('is-collapsed', !state.detailOpen);
+  dom.btnDetail.classList.toggle('is-active', state.detailOpen);
+  renderSidebar();
+  renderDetails();
+  dom.titleMeta.textContent = `${greeting()}，正在读取文件…`;
+
+  const start =
+    state.settings.lastFolder ||
+    state.places.find((place) => place.key === 'downloads')?.dir ||
+    state.places[0]?.dir ||
+    state.info.home;
+
+  await navigate(start || 'C:\\', { push: true });
+
+  // 上次的目录可能已被删除，退回一个能打开的位置，别让用户一进来就看到错误页
+  if (state.error && state.error.kind === 'missing') {
+    const fallback = state.places[0]?.dir || state.drives[0]?.path;
+    if (fallback && !isSamePath(fallback, start)) await navigate(fallback, { push: true });
   }
 }
 
-window.addEventListener('error', (event) => {
-  console.error(event.error || event.message);
-});
-window.addEventListener('unhandledrejection', (event) => {
-  console.error('未处理的异步错误', event.reason);
+boot().catch((err) => {
+  console.error(err);
+  state.loading = false;
+  state.error = { kind: 'error', message: String(err?.message || err) };
+  renderState();
 });
 
-bootstrap();
+// 便于冒烟脚本读取内部状态，不影响正常使用
+window.__lens = { state, navigate, openPanel: (kind) => (kind === 'settings' ? openSettings() : openDrawer(kind)) };

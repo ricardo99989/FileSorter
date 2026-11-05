@@ -1,65 +1,125 @@
-/* ==========================================================================
-   tokens.css — 设计变量与基础重置
-   所有颜色/阴影/时长只在这里定义，组件层不写死数值。
-   ========================================================================== */
+/**
+ * tokens.css — 设计令牌
+ *
+ * 原则：颜色、尺寸、时长只在这里定义，组件里不写死数值。
+ * 换肤 / 改密度 / 做紧凑模式都只需要动这一个文件。
+ */
 
 :root {
-  /* 底色：米白偏冷，避免纯白刺眼 */
-  --bg: #E9ECF1;
-  --bg-soft: #EDEFF3;
-  --bg-deep: #E2E6EC;
+  color-scheme: light;
 
-  /* 玻璃层：三级透明度，越靠上越实 */
-  --glass-1: rgba(255, 255, 255, 0.5);
-  --glass-2: rgba(255, 255, 255, 0.66);
-  --glass-3: rgba(255, 255, 255, 0.84);
+  /* ---------- 底色与文字 ---------- */
+  --bg-0: #eef1f7;
+  --bg-1: #e7ebf3;
+  --bg-2: #dfe4ee;
+  --ink-1: #23262e;
+  --ink-2: #4a4f5c;
+  --ink-3: #777d8c;
+  --ink-4: #9aa0ae;
 
-  --stroke-1: rgba(255, 255, 255, 0.88);
-  --stroke-2: rgba(180, 190, 205, 0.32);
-  --stroke-3: rgba(150, 162, 180, 0.28);
+  /* ---------- 玻璃 ---------- */
+  --glass-1: rgba(255, 255, 255, 0.55);
+  --glass-2: rgba(255, 255, 255, 0.72);
+  --glass-3: rgba(255, 255, 255, 0.86);
+  --glass-stroke: rgba(255, 255, 255, 0.72);
+  --glass-inner: rgba(255, 255, 255, 0.5);
+  --glass-edge: rgba(120, 134, 165, 0.16);
+  --shadow-1: 0 1px 2px rgba(64, 76, 102, 0.05), 0 8px 20px rgba(64, 76, 102, 0.06);
+  --shadow-2: 0 2px 6px rgba(64, 76, 102, 0.07), 0 18px 44px rgba(64, 76, 102, 0.11);
+  --shadow-3: 0 6px 16px rgba(56, 66, 92, 0.1), 0 32px 70px rgba(56, 66, 92, 0.18);
 
-  /* 文字：四级层级，全部通过对比度检查 */
-  --ink-1: #2E3440;
-  --ink-2: #566173;
-  --ink-3: #7E8899;
-  --ink-4: #A3ACB9;
+  /* ---------- 主色（只两个：蓝灰 + 淡紫） ---------- */
+  --accent: #6b7ca8;
+  --accent-strong: #55648e;
+  --accent-soft: rgba(107, 124, 168, 0.12);
+  --accent-ring: rgba(107, 124, 168, 0.3);
+  --lilac: #8d86b8;
+  --lilac-soft: rgba(141, 134, 184, 0.14);
 
-  /* 莫兰迪主色 */
-  --accent: #8A9BB0;
-  --accent-deep: #6E8099;
-  --accent-soft: #C9D6E4;
-  --ok: #7FA98C;
-  --warn: #C2A17E;
-  --danger: #C08484;
+  /* ---------- 分类色（低饱和莫兰迪，色相按需求固定） ----------
+     低饱和不等于看不清：这批取值把明度压低、彩度保留在 35%~45% 之间，
+     既维持莫兰迪的灰调，又能在 20px 的图标上分辨出黄/蓝/红/绿。 */
+  --tone-amber: #a87a30;
+  --tone-amber-bg: rgba(186, 142, 62, 0.18);
+  --tone-blue: #4e7194;
+  --tone-blue-bg: rgba(78, 113, 148, 0.17);
+  --tone-rose: #a95e5e;
+  --tone-rose-bg: rgba(169, 94, 94, 0.16);
+  --tone-sage: #5a8a6b;
+  --tone-sage-bg: rgba(90, 138, 107, 0.17);
+  --tone-slate: #6e7683;
+  --tone-slate-bg: rgba(110, 118, 131, 0.16);
+  --tone-violet: #7566a3;
+  --tone-violet-bg: rgba(117, 102, 163, 0.17);
+  --tone-teal: #3f8a83;
+  --tone-teal-bg: rgba(63, 138, 131, 0.17);
 
-  /* 新拟态阴影：右下冷灰、左上纯白，双向塑形 */
-  --shadow-out: 6px 6px 16px rgba(163, 177, 198, 0.42), -6px -6px 16px rgba(255, 255, 255, 0.92);
-  --shadow-out-lg: 10px 10px 26px rgba(163, 177, 198, 0.46), -8px -8px 22px rgba(255, 255, 255, 0.96);
-  --shadow-out-sm: 4px 4px 10px rgba(163, 177, 198, 0.38), -4px -4px 10px rgba(255, 255, 255, 0.9);
-  --shadow-in: inset 3px 3px 7px rgba(163, 177, 198, 0.55), inset -3px -3px 7px rgba(255, 255, 255, 0.95);
-  --shadow-in-sm: inset 2px 2px 5px rgba(163, 177, 198, 0.5), inset -2px -2px 5px rgba(255, 255, 255, 0.92);
+  /* ---------- 尺寸 ---------- */
+  --titlebar-h: 44px;
+  --sidebar-w: 218px;
+  --details-w: 318px;
+  --drawer-w: 540px;
+  --row-h: 54px;
+  /* 网格卡片高度：虚拟滚动按它计算行距，改这里 JS 会自动跟随 */
+  --card-h: 188px;
+  --radius-s: 8px;
+  --radius-m: 12px;
+  --radius-l: 16px;
+  --radius-xl: 22px;
+  --gutter: 0px;
 
-  --r-xl: 22px;
-  --r-lg: 16px;
-  --r-md: 12px;
-  --r-sm: 9px;
-  --r-pill: 999px;
+  /* ---------- 动效（150–250ms，90fps 友好） ---------- */
+  --t-fast: 150ms;
+  --t-base: 190ms;
+  --t-slow: 240ms;
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
 
-  /* 六档时长（原则 9：Timing） */
-  --t-1: 80ms;
-  --t-2: 120ms;
-  --t-3: 180ms;
-  --t-4: 240ms;
-  --t-5: 320ms;
-  --t-6: 420ms;
+/* ---------- 深色：墨黑带一点冷调，不是纯黑 ---------- */
+:root[data-theme='dark'] {
+  color-scheme: dark;
 
-  /* 缓动：进出各减速（原则 6：Slow in & out） */
-  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
-  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --bg-0: #0a0a0d;
+  --bg-1: #0e0e13;
+  --bg-2: #12121a;
+  --ink-1: #eceef4;
+  --ink-2: #b6bbc8;
+  --ink-3: #8b91a1;
+  --ink-4: #6b7180;
 
-  --font: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "PingFang SC", system-ui, -apple-system, sans-serif;
-  --font-mono: "Cascadia Mono", "Consolas", monospace;
+  --glass-1: rgba(28, 29, 38, 0.5);
+  --glass-2: rgba(30, 31, 41, 0.68);
+  --glass-3: rgba(34, 35, 46, 0.84);
+  --glass-stroke: rgba(255, 255, 255, 0.08);
+  --glass-inner: rgba(255, 255, 255, 0.11);
+  --glass-edge: rgba(255, 255, 255, 0.05);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 24px rgba(0, 0, 0, 0.32);
+  --shadow-2: 0 2px 8px rgba(0, 0, 0, 0.45), 0 20px 46px rgba(0, 0, 0, 0.42);
+  --shadow-3: 0 8px 20px rgba(0, 0, 0, 0.5), 0 36px 80px rgba(0, 0, 0, 0.55);
+
+  --accent: #8b9ac4;
+  --accent-strong: #a3b1d8;
+  --accent-soft: rgba(139, 154, 196, 0.16);
+  --accent-ring: rgba(139, 154, 196, 0.34);
+  --lilac: #a49dcc;
+  --lilac-soft: rgba(164, 157, 204, 0.16);
+
+  /* 深色下反向处理：提明度保对比，彩度同样收敛，避免在深底上炸眼 */
+  --tone-amber: #dcb47a;
+  --tone-amber-bg: rgba(220, 180, 122, 0.19);
+  --tone-blue: #8fb0d8;
+  --tone-blue-bg: rgba(143, 176, 216, 0.19);
+  --tone-rose: #dc9a9a;
+  --tone-rose-bg: rgba(220, 154, 154, 0.19);
+  --tone-sage: #98c5a8;
+  --tone-sage-bg: rgba(152, 197, 168, 0.19);
+  --tone-slate: #a3aab8;
+  --tone-slate-bg: rgba(163, 170, 184, 0.18);
+  --tone-violet: #b2a8dc;
+  --tone-violet-bg: rgba(178, 168, 220, 0.19);
+  --tone-teal: #84c6bf;
+  --tone-teal-bg: rgba(132, 198, 191, 0.19);
 }
 
 * {
@@ -70,50 +130,42 @@ html,
 body {
   height: 100%;
   margin: 0;
+  overflow: hidden;
 }
 
 body {
-  font-family: var(--font);
-  font-size: 13.5px;
-  line-height: 1.55;
+  font-family: 'Segoe UI Variable Display', 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei UI', 'Microsoft YaHei', system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
   color: var(--ink-1);
-  background:
-    radial-gradient(680px 420px at 12% -8%, rgba(255, 255, 255, 0.9), transparent 62%),
-    radial-gradient(560px 380px at 96% 102%, rgba(201, 214, 228, 0.55), transparent 66%),
-    var(--bg);
+  background: var(--bg-0);
   -webkit-font-smoothing: antialiased;
-  overflow: hidden;
+  text-rendering: optimizeLegibility;
   user-select: none;
+  cursor: default;
 }
 
-svg {
-  width: 18px;
-  height: 18px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+/* hidden 属性必须压得住组件自己的 display，否则骨架屏会一直浮在内容下面 */
+[hidden] {
+  display: none !important;
 }
 
-.sprite {
-  position: absolute;
-  width: 0;
-  height: 0;
-  overflow: hidden;
-}
-
-h1,
-h2,
-h3,
-p {
-  margin: 0;
-}
-
-input {
-  font-family: inherit;
-  font-size: inherit;
+button {
+  font: inherit;
   color: inherit;
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+  user-select: text;
 }
 
 ::-webkit-scrollbar {
@@ -121,47 +173,53 @@ input {
   height: 10px;
 }
 
-::-webkit-scrollbar-thumb {
-  background: rgba(150, 162, 180, 0.35);
-  border: 3px solid transparent;
-  border-radius: var(--r-pill);
-  background-clip: content-box;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(150, 162, 180, 0.55);
-  background-clip: content-box;
-}
-
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 
-/* 无障碍降级：系统要求减少动效时，所有时长归零 */
-@media (prefers-reduced-motion: reduce) {
-  :root {
-    --t-1: 1ms;
-    --t-2: 1ms;
-    --t-3: 1ms;
-    --t-4: 1ms;
-    --t-5: 1ms;
-    --t-6: 1ms;
-  }
+::-webkit-scrollbar-thumb {
+  background: var(--glass-edge);
+  border-radius: 8px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
 
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-4);
+  background-clip: content-box;
+}
+
+/* 主题切换时只给颜色加过渡，别让整页重绘 */
+html.theme-anim,
+html.theme-anim * {
+  transition: background-color 260ms var(--ease), border-color 260ms var(--ease),
+    color 260ms var(--ease), box-shadow 260ms var(--ease);
+}
+
+/* ---------- 无障碍 / 省电 ---------- */
+html.motion-soft {
+  --t-fast: 110ms;
+  --t-base: 140ms;
+  --t-slow: 180ms;
+}
+
+html.motion-off *,
+html.motion-off *::before,
+html.motion-off *::after {
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 1ms !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
   * {
     animation-duration: 1ms !important;
     transition-duration: 1ms !important;
   }
 }
 
-/* 动效强度：设置里可切换到 off / soft */
-body[data-motion="off"] * {
-  animation: none !important;
-  transition: none !important;
-}
-
-body[data-motion="soft"] {
-  --t-4: 160ms;
-  --t-5: 220ms;
-  --t-6: 280ms;
+:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 2px;
+  border-radius: 6px;
 }

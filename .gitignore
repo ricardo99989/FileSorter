@@ -5,12 +5,20 @@ node_modules/
 dist/
 out/
 release/
+# 打包调试时临时挪走的旧产物（electron-builder 会锁住 dist，用改名绕开）
+_dist_old_*/
+_dist_prev_*/
 *.log
 
 # 运行时数据
 storage/
 demo/
 _demo_files/
+
+# 图标生成脚本的预览图，属于中间产物，不进版本库
+build/_sizes_*.png
+build/_ico_*.png
+build/_tmp_*.png
 
 # 系统文件
 .DS_Store
@@ -22,3 +30,8 @@ desktop.ini
 !.vscode/extensions.json
 .idea/
 *.swp
+
+# 测试与调试残留
+coverage/
+*.snap
+_filesorter-test-*/
