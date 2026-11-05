@@ -354,10 +354,21 @@ function attachSmokeProbe(win) {
     await new Promise((resolve) => setTimeout(resolve, 1600));
 
     const steps = {
-      dark: `document.getElementById('btnTheme').click()`,
+      /* 主题是循环切换的：system → light → dark → system，
+         点一次不保证到目标档，所以循环点到为止 */
+      dark: `(async () => {
+        for (let i = 0; i < 4; i += 1) {
+          if (document.documentElement.dataset.theme === 'dark') break;
+          document.getElementById('btnTheme').click();
+          await new Promise((r) => setTimeout(r, 140));
+        }
+      })()`,
       light: `(async () => {
-        const s = await window.filesorter.settings.get();
-        if ((s.settings.theme || 'system') !== 'dark') document.getElementById('btnTheme').click();
+        for (let i = 0; i < 4; i += 1) {
+          if (document.documentElement.dataset.theme === 'light') break;
+          document.getElementById('btnTheme').click();
+          await new Promise((r) => setTimeout(r, 140));
+        }
       })()`,
       grid: `document.getElementById('btnGrid').click()`,
       list: `document.getElementById('btnList').click()`,
@@ -383,6 +394,23 @@ function attachSmokeProbe(win) {
         const card = [...document.querySelectorAll('.grid-card')][5];
         if (card) card.click();
       })()`,
+      /* 轮盘悬停：高亮靠 class 切换，合成事件能触发同一套委托逻辑 */
+      wheelhover: `(() => {
+        const segs = [...document.querySelectorAll('.wheel__seg')];
+        const seg = segs[2] || segs[0];
+        if (seg) seg.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+      })()`,
+      /* 轮盘点击：走"跳转或筛选"的完整链路 */
+      wheelfilter: `(() => {
+        const seg = document.querySelectorAll('.wheel__seg')[0];
+        if (seg) seg.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      })()`,
+      /* 收起轮盘，验证折叠态那行摘要 */
+      wheelfold: `(() => { document.getElementById('btnWheelFold').click(); })()`,
+      /* 三模式切换，窗口尺寸由主进程按模式重排，截图前要等它稳住 */
+      mode_window: `window.filesorter.setMode('window')`,
+      mode_sidebar: `window.filesorter.setMode('sidebar')`,
+      mode_dock: `window.filesorter.setMode('dock')`,
       organize: `(async () => {
         await window.__lens.navigate(${JSON.stringify(smokeDir)});
         await new Promise((r) => setTimeout(r, 600));
@@ -518,6 +546,22 @@ function attachSmokeProbe(win) {
       }
     }
 
+    /**
+     * 截图前把轮盘的悬停态复位：窗口位置是上次记住的，鼠标可能正好压在轮盘上，
+     * 那样拍到的中心区是"某个分类的详情"而不是总数，截图就没法当基准。
+     */
+    await win.webContents
+      .executeJavaScript(
+        `(() => {
+          const w = document.getElementById('wheel');
+          if (w) w.dispatchEvent(new PointerEvent('pointerleave'));
+        })()`,
+      )
+      .catch(() => {});
+    /* 再把合成指针挪到左上角：鼠标可能正压在某张卡片上，截图会带出悬停态和勾选框 */
+    win.webContents.sendInputEvent({ type: 'mouseMove', x: 2, y: 2 });
+    await new Promise((resolve) => setTimeout(resolve, 260));
+
     try {
       const image = await win.webContents.capturePage();
       const target = captureArg
@@ -585,6 +629,18 @@ app.whenReady().then(async () => {
   });
 
   createWindow();
+
+  /**
+   * 冒烟专用：允许脚本指定窗口尺寸。
+   * 截图要反映"默认 1360×860 下长什么样"，而本机 store 里存的是上次拖过的尺寸，
+   * 不覆盖就会拿一个被改小的窗口当基准，评审判断全跑偏。
+   */
+  const sizeArg = process.argv.find((arg) => arg.startsWith('--smoke-size='));
+  if (isSmoke && sizeArg && mainWindow && !mainWindow.isDestroyed()) {
+    const [w, h] = sizeArg.split('=')[1].split('x').map(Number);
+    if (w > 0 && h > 0) mainWindow.setSize(Math.round(w), Math.round(h));
+  }
+
   buildTray();
   scheduler.arm();
 

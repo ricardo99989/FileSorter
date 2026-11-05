@@ -16,7 +16,7 @@
 
 .metric {
   padding: 11px 13px;
-  border-radius: 13px;
+  border-radius: var(--radius-l);
   background: var(--glass-2);
   border: 1px solid var(--glass-stroke);
 }
@@ -126,7 +126,7 @@
   padding: 0 12px;
   font-size: 12.5px;
   color: var(--ink-3);
-  border-radius: 9px 9px 0 0;
+  border-radius: var(--radius-s) 9px 0 0;
   white-space: nowrap;
   transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
 }
@@ -157,7 +157,7 @@
 .rule-card {
   padding: 12px 13px;
   margin-bottom: 10px;
-  border-radius: 13px;
+  border-radius: var(--radius-l);
   background: var(--glass-1);
   border: 1px solid var(--glass-stroke);
   transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
@@ -179,7 +179,7 @@
   min-width: 0;
   height: 28px;
   padding: 0 9px;
-  border-radius: 8px;
+  border-radius: var(--radius-s);
   background: transparent;
   border: 1px solid transparent;
   font-size: 12.5px;
@@ -264,7 +264,7 @@
 
 .empty-note {
   padding: 22px 14px;
-  border-radius: 12px;
+  border-radius: var(--radius-m);
   border: 1px dashed var(--glass-edge);
   text-align: center;
   font-size: 12px;
@@ -297,7 +297,7 @@
 .exclude-preset button {
   height: 24px;
   padding: 0 9px;
-  border-radius: 7px;
+  border-radius: var(--radius-s);
   font-size: 11.5px;
   color: var(--ink-3);
   border: 1px dashed var(--glass-edge);
@@ -334,7 +334,7 @@
   align-items: center;
   gap: 8px;
   padding: 7px 10px;
-  border-radius: 9px;
+  border-radius: var(--radius-s);
   background: var(--glass-2);
   font-size: 12px;
   color: var(--ink-2);
@@ -354,7 +354,7 @@
 
 .dupe-group {
   margin-bottom: 12px;
-  border-radius: 13px;
+  border-radius: var(--radius-l);
   background: var(--glass-1);
   border: 1px solid var(--glass-stroke);
   overflow: hidden;
@@ -569,7 +569,7 @@
 
 .preview-table {
   margin-top: 10px;
-  border-radius: 11px;
+  border-radius: var(--radius-m);
   border: 1px solid var(--glass-stroke);
   overflow: hidden;
   max-height: 280px;
@@ -627,7 +627,7 @@
   gap: 10px;
   padding: 10px 12px;
   margin-bottom: 8px;
-  border-radius: 12px;
+  border-radius: var(--radius-m);
   background: var(--glass-1);
   border: 1px solid var(--glass-stroke);
 }
@@ -690,7 +690,7 @@
   gap: 7px;
   height: 30px;
   padding: 0 9px;
-  border-radius: 8px;
+  border-radius: var(--radius-s);
   font-size: 12.5px;
   color: var(--ink-2);
   text-align: left;
@@ -726,7 +726,7 @@
   align-items: center;
   gap: 9px;
   padding: 7px 9px;
-  border-radius: 9px;
+  border-radius: var(--radius-s);
   font-size: 12px;
   color: var(--ink-2);
   transition: background var(--t-fast) var(--ease);
@@ -760,7 +760,7 @@
   flex-direction: column;
   gap: 9px;
   padding: 14px;
-  border-radius: 14px;
+  border-radius: var(--radius-l);
   background: var(--glass-3);
   box-shadow: var(--shadow-3);
   border: 1px solid var(--glass-stroke);
@@ -781,7 +781,7 @@
   gap: 8px;
   height: 28px;
   padding: 0 7px;
-  border-radius: 7px;
+  border-radius: var(--radius-s);
   font-size: 12px;
   color: var(--ink-2);
 }
@@ -794,7 +794,7 @@
 
 .preview-box {
   margin-top: 12px;
-  border-radius: 12px;
+  border-radius: var(--radius-m);
   overflow: hidden;
   border: 1px solid var(--glass-stroke);
   background: var(--glass-1);
@@ -878,7 +878,7 @@
 
 .preview-md pre {
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-s);
   background: var(--glass-2);
   overflow-x: auto;
   font-family: 'Cascadia Mono', 'Consolas', monospace;
@@ -944,7 +944,7 @@
   gap: 10px;
   padding: 11px 12px;
   margin-bottom: 8px;
-  border-radius: 12px;
+  border-radius: var(--radius-m);
   background: var(--glass-1);
   border: 1px solid var(--glass-stroke);
 }
@@ -985,7 +985,7 @@
   align-items: center;
   gap: 14px;
   padding: 16px;
-  border-radius: 15px;
+  border-radius: var(--radius-l);
   background: var(--glass-2);
   border: 1px solid var(--glass-stroke);
   margin-bottom: 16px;
@@ -994,7 +994,7 @@
 .about-hero img {
   width: 52px;
   height: 52px;
-  border-radius: 14px;
+  border-radius: var(--radius-l);
 }
 
 .about-hero__name {

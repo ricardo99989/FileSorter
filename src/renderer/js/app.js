@@ -20,6 +20,15 @@ import {
   tableHeadHtml,
 } from './views/list.js';
 import { detailsHtml } from './views/details.js';
+import {
+  WHEEL_BUCKETS,
+  bucketOf,
+  centerHoverHtml,
+  centerIdleHtml,
+  computeWheel,
+  legendHtml,
+  wheelSvg,
+} from './wheel.js';
 import { organizeHtml } from './panels/organize.js';
 import { settingsHtml } from './panels/settings.js';
 import { dupesHtml } from './panels/dupes.js';
@@ -69,6 +78,10 @@ const dom = {
   glow: $('cursorGlow'),
   selectionBar: $('selectionBar'),
   selectionCount: $('selectionCount'),
+  wheelBar: $('wheelBar'),
+  wheel: $('wheel'),
+  wheelLegend: $('wheelLegend'),
+  btnWheelFold: $('btnWheelFold'),
 };
 
 const state = {
@@ -111,6 +124,15 @@ const state = {
   theme: 'system',
   detailOpen: true,
 
+  /* 轮盘 */
+  wheelModel: { buckets: [], total: 0, totalSize: 0 },
+  wheelFilter: '',
+  /* null = 跟随窗口高度自动决定；true/false = 用户手动指定过 */
+  wheelFold: null,
+  /* 列表入场动画的计时起点：只有在这个时间窗内渲染的行才做错开淡入，
+     否则滚动时复用的节点会一遍遍重播动画 */
+  enterAt: 0,
+
   /* 导航 */
   history: [],
   hIndex: -1,
@@ -144,8 +166,9 @@ const list = new VirtualList({
     return node;
   },
   renderRow: (index, node) => {
-    if (state.view === 'grid') {
-      const start = index * state.cols;
+    const grid = state.view === 'grid';
+    const start = index * state.cols;
+    if (grid) {
       const slice = state.entries.slice(start, start + state.cols);
       node.className = 'vrow grid-row';
       node.style.gridTemplateColumns = `repeat(${state.cols}, minmax(0, 1fr))`;
@@ -163,6 +186,20 @@ const list = new VirtualList({
       node.innerHTML = entry
         ? rowHtml(entry, { selected: state.selected === entry.path, checked: state.checked.has(entry.path) })
         : '';
+    }
+
+    /**
+     * 入场动画只在"刚换完目录/刚筛完"的 420ms 窗口里挂，
+     * 超出窗口就不再挂——否则滚动时复用的节点会把动画一遍遍重播。
+     * 错开上限 11：再多的话滚到底部时最后一项要等半秒才出现。
+     */
+    if (Date.now() - state.enterAt < 420) {
+      const items = grid ? [...node.children] : node.firstElementChild ? [node.firstElementChild] : [];
+      items.forEach((el, offset) => {
+        const seat = grid ? start + offset : index;
+        el.style.setProperty('--i', String(Math.min(seat, 11)));
+        el.classList.add('is-enter');
+      });
     }
   },
   overscan: 6,
@@ -274,6 +311,15 @@ async function cycleTheme() {
   toast(t('toast.theme', { name: label }));
 }
 
+/**
+ * 紧凑模式只有 420px 宽，长占位文案会被截在半个字上。
+ * 换成短文案，比让用户看"筛选，回车可搜…"体面。
+ */
+function applyModeCopy() {
+  const compact = document.documentElement.dataset.mode !== 'window';
+  dom.search.placeholder = compact ? t('toolbar.searchShort') : t('toolbar.search');
+}
+
 function applyMotion(level) {
   document.documentElement.classList.toggle('motion-soft', level === 'soft');
   document.documentElement.classList.toggle('motion-off', level === 'off');
@@ -350,7 +396,119 @@ function renderCrumbs() {
 
 function rebuildEntries() {
   const base = state.deep ? state.deep.entries : state.listing?.entries || [];
-  state.entries = sortEntries(filterEntries(base, state.query), state.sort);
+  let rows = filterEntries(base, state.query);
+  // 轮盘筛选叠在关键词筛选之后：两者是"且"的关系，不是互斥
+  if (state.wheelFilter) rows = rows.filter((entry) => bucketOf(entry).key === state.wheelFilter);
+  state.entries = sortEntries(rows, state.sort);
+}
+
+/* ------------------------------ 分类轮盘 ------------------------------ */
+
+/** 点扇区时的目标文件夹名。命中就直接进去，不命中就退化成筛选。 */
+const BUCKET_FOLDERS = {
+  image: ['图片', '照片', 'images', 'pictures', 'photos'],
+  video: ['视频', 'video', 'videos', '影片'],
+  doc: ['文档', 'documents', 'docs', '文件'],
+  audio: ['音频', '音乐', 'music', 'audio', 'sound'],
+  other: ['其他', 'others', 'misc'],
+};
+
+/** 当前目录里是否已有与这个桶同名的分类文件夹 */
+function folderForBucket(key) {
+  const aliases = BUCKET_FOLDERS[key];
+  if (!aliases) return null;
+  const dirs = (state.listing?.entries || []).filter((entry) => entry.isDir);
+  const hit = dirs.find((entry) => aliases.includes(String(entry.name).toLowerCase()))
+    || dirs.find((entry) => aliases.some((alias) => String(entry.name).toLowerCase().includes(alias)));
+  return hit ? hit.path : null;
+}
+
+const wheelBase = () => (state.deep ? state.deep.entries : state.listing?.entries || []);
+
+/**
+ * 轮盘只在这些情况下重画：换目录、搜索、筛选、切视图。
+ * 滚动不重画——它在列表外面，跟着滚动重画等于白烧 CPU。
+ */
+function renderWheel() {
+  const base = wheelBase();
+  const model = computeWheel(base);
+  state.wheelModel = model;
+
+  const compact = document.documentElement.dataset.mode !== 'window';
+  // 空目录没有占比可言；紧凑模式窗口太窄，环会挤成一团，两种都收起
+  const visible = model.total > 0 && !compact;
+  dom.wheelBar.hidden = !visible;
+  if (!visible) return;
+
+  /* 窗口矮的时候默认收起：148px 的轮盘加内边距要占掉 172px，
+     在 640px 高的最小窗口里会把列表挤到只剩一行半。用户手动开合过就以他的为准。 */
+  const autoFold = window.innerHeight < 720;
+  const folded = state.wheelFold === null ? autoFold : state.wheelFold;
+  dom.wheelBar.classList.toggle('is-folded', folded);
+  /* 收起时这条带子会缩成一行，得留一句摘要说明它是什么 */
+  dom.wheelBar.dataset.total = `${model.total} 项 · ${model.buckets.length} 类`;
+  dom.btnWheelFold.innerHTML = icon('chevron', 12);
+  dom.btnWheelFold.title = folded ? '展开分类轮盘' : '收起分类轮盘';
+  if (folded) return;
+
+  dom.wheel.innerHTML = `${wheelSvg(model, state.wheelFilter)}<div class="wheel__center">${centerIdleHtml(
+    model,
+  )}</div>`;
+  dom.wheelLegend.innerHTML = legendHtml(model, state.wheelFilter);
+}
+
+/** 悬停联动：扇区变粗 + 其余变淡 + 中心换成该分类的详情 + 图例同步 */
+function wheelHover(index) {
+  const model = state.wheelModel;
+  const bucket = index >= 0 ? model.buckets[index] : null;
+  if (index >= 0 && !bucket) return;
+
+  dom.wheel.classList.toggle('is-hovering', Boolean(bucket));
+  dom.wheel.querySelectorAll('.wheel__seg').forEach((seg) => {
+    seg.classList.toggle('is-hot', Number(seg.dataset.index) === index);
+  });
+  dom.wheelLegend.querySelectorAll('.wheel-legend__row').forEach((row) => {
+    row.classList.toggle('is-hover', Number(row.dataset.index) === index);
+  });
+
+  const center = dom.wheel.querySelector('.wheel__center');
+  if (center) center.innerHTML = bucket ? centerHoverHtml(bucket) : centerIdleHtml(model);
+}
+
+/**
+ * 点扇区/图例：
+ * 1. 目录里已有同名分类文件夹 → 直接进去（"跳转到该分类的文件列表"）；
+ * 2. 没有再退化成原地筛选，再点一次取消。
+ */
+async function applyWheelFilter(key) {
+  if (!key) return;
+  if (state.wheelFilter === key) {
+    state.wheelFilter = '';
+    state.enterAt = Date.now();
+    renderList();
+    renderWheel();
+    return;
+  }
+
+  const target = folderForBucket(key);
+  if (target) {
+    state.wheelFilter = '';
+    await navigate(target);
+    return;
+  }
+
+  state.wheelFilter = key;
+  state.enterAt = Date.now();
+  renderList();
+  renderWheel();
+}
+
+function clearWheelFilter() {
+  if (!state.wheelFilter) return;
+  state.wheelFilter = '';
+  state.enterAt = Date.now();
+  renderList();
+  renderWheel();
 }
 
 function computeCols() {
@@ -363,6 +521,16 @@ function renderHead() {
   dom.tableHead.style.display = state.view === 'grid' ? 'none' : '';
 }
 
+/** 状态栏里的"正在按分类筛选"标记，点一下就取消 */
+function wheelFilterChip() {
+  if (!state.wheelFilter) return '';
+  const bucket = WHEEL_BUCKETS.find((item) => item.key === state.wheelFilter);
+  if (!bucket) return '';
+  return `<button class="statusbar__chip statusbar__chip--filter" type="button" data-wheel-act="clear"
+    title="取消分类筛选">${icon('filter', 11)}<span>只看${esc(bucket.label)}</span>
+    <span class="statusbar__chip-x">×</span></button>`;
+}
+
 function renderStatus() {
   if (state.deep) {
     dom.statusbar.innerHTML = `<span class="statusbar__chip">${icon('search', 11)} ${esc(
@@ -373,12 +541,14 @@ function renderStatus() {
       <span class="statusbar__chip">${icon('info', 12)} 结果来自当前文件夹及其子文件夹</span>`;
     return;
   }
-  dom.statusbar.innerHTML = statusHtml({
-    ...state,
-    entries: state.entries,
-    watching: state.watching,
-    cloud: state.cloud,
-  });
+  dom.statusbar.innerHTML =
+    wheelFilterChip() +
+    statusHtml({
+      ...state,
+      entries: state.entries,
+      watching: state.watching,
+      cloud: state.cloud,
+    });
 }
 
 function renderList({ resetScroll = false } = {}) {
@@ -388,6 +558,7 @@ function renderList({ resetScroll = false } = {}) {
   if (resetScroll) dom.viewport.scrollTop = 0;
   list.refresh();
   updateGutter();
+  renderWheel();
   renderState();
   renderStatus();
   renderSelectionBar();
@@ -500,6 +671,8 @@ async function navigate(dir, options = {}) {
   if (!dir) return;
   const token = (navToken += 1);
   const { push = true, refresh = false, keepQuery = false } = options;
+  // 换了目录，上一轮的分类筛选就不该继续生效，否则用户会看到"空文件夹"
+  if (!isSamePath(dir, state.cwd)) state.wheelFilter = '';
   if (!keepQuery) {
     state.query = '';
     state.deep = null;
@@ -552,6 +725,8 @@ async function navigate(dir, options = {}) {
   dom.titleMeta.textContent = `${listing.name} · ${t('app.items', {
     n: listing.counts.files + listing.counts.dirs,
   })}`;
+  // 换目录 = 一批新卡片，从这里开始 420ms 内渲染的行做淡入上滑
+  state.enterAt = Date.now();
   renderCrumbs();
   renderSidebar();
   renderList({ resetScroll: true });
@@ -702,6 +877,8 @@ function syncSearchNote() {
 
 const applyFilter = debounce(() => {
   if (state.deep) return;
+  /* 搜索结果是"逐项淡入"的，所以每次筛选都重置入场计时，让新一批行重新错开出现 */
+  state.enterAt = Date.now();
   renderList({ resetScroll: true });
 }, 90);
 
@@ -1225,12 +1402,53 @@ dom.btnTheme.addEventListener('click', cycleTheme);
 dom.btnList.addEventListener('click', () => setView('list'));
 dom.btnGrid.addEventListener('click', () => setView('grid'));
 
+/* 轮盘：扇区与图例双向联动，点一下跳转或筛选 */
+const segIndexOf = (node) => {
+  const seg = node.closest?.('.wheel__seg');
+  return seg ? Number(seg.dataset.index) : -1;
+};
+
+dom.wheel.addEventListener('pointerover', (event) => {
+  const index = segIndexOf(event.target);
+  if (index >= 0) wheelHover(index);
+});
+dom.wheel.addEventListener('pointerleave', () => wheelHover(-1));
+dom.wheel.addEventListener('click', (event) => {
+  const seg = event.target.closest('.wheel__seg');
+  if (seg) applyWheelFilter(seg.dataset.bucket);
+});
+
+dom.wheelLegend.addEventListener('pointerover', (event) => {
+  const row = event.target.closest('.wheel-legend__row');
+  if (row) wheelHover(Number(row.dataset.index));
+});
+dom.wheelLegend.addEventListener('pointerleave', () => wheelHover(-1));
+dom.wheelLegend.addEventListener('click', (event) => {
+  const row = event.target.closest('.wheel-legend__row');
+  if (row) applyWheelFilter(row.dataset.bucket);
+});
+
+dom.btnWheelFold.addEventListener('click', () => {
+  const current = state.wheelFold === null ? window.innerHeight < 720 : state.wheelFold;
+  state.wheelFold = !current;
+  renderWheel();
+  // 收起/展开改变了列表可用高度，虚拟列表得重算行数
+  list.schedule();
+});
+
+/* 状态栏的分类筛选标记：点掉 */
+dom.statusbar.addEventListener('click', (event) => {
+  if (event.target.closest('[data-wheel-act="clear"]')) clearWheelFilter();
+});
+
 async function setView(view) {
   if (state.view === view) return;
   state.view = view;
   dom.btnList.classList.toggle('is-active', view === 'list');
   dom.btnGrid.classList.toggle('is-active', view === 'grid');
-  renderList();
+  // 换视图等于换一批卡片，同样走一次淡入上滑
+  state.enterAt = Date.now();
+  renderList({ resetScroll: true });
   await api.settings.save({ viewMode: view });
 }
 
@@ -1907,6 +2125,31 @@ window.addEventListener('mouseleave', () => {
   dom.glow.classList.remove('is-on');
 });
 
+/**
+ * 卡片表面的光影跟随：像光在玻璃上滑过去。
+ * 只改当前悬停那一张的 --mx/--my 两个 CSS 变量，由 ::before 的径向渐变消费，
+ * 不新建节点、不触发重排；同一帧内多次移动只算一次。
+ */
+const cardGlow = { el: null, x: 0, y: 0, frame: 0 };
+
+dom.vcontent.addEventListener('pointermove', (event) => {
+  if (!state.settings.cursorGlow) return;
+  const card = event.target.closest('.grid-card');
+  if (!card) return;
+  cardGlow.el = card;
+  cardGlow.x = event.clientX;
+  cardGlow.y = event.clientY;
+  if (cardGlow.frame) return;
+  cardGlow.frame = requestAnimationFrame(() => {
+    cardGlow.frame = 0;
+    const el = cardGlow.el;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    el.style.setProperty('--mx', `${(cardGlow.x - rect.left).toFixed(1)}px`);
+    el.style.setProperty('--my', `${(cardGlow.y - rect.top).toFixed(1)}px`);
+  });
+});
+
 /* ------------------------------ 工具入口 ------------------------------ */
 
 $('btnOrganize').addEventListener('click', openOrganize);
@@ -1970,6 +2213,20 @@ api.onModeChanged(({ mode }) => {
   }
 
   if (state.panel === 'settings') renderPanel();
+
+  /**
+   * 三模式切换时布局是"整块重排"（侧栏从有到无），直接跳会很硬。
+   * 加 320ms 的淡入上浮，让眼睛有个落点；动画只碰 opacity/transform，不触重排。
+   */
+  const root = document.documentElement;
+  root.classList.remove('mode-anim');
+  void root.offsetWidth;
+  root.classList.add('mode-anim');
+  setTimeout(() => root.classList.remove('mode-anim'), 380);
+
+  applyModeCopy();
+  // 紧凑模式不显示轮盘，窗口模式才显示，切回来要重算
+  renderWheel();
   list.schedule();
 });
 
@@ -2014,6 +2271,7 @@ async function boot() {
   document.documentElement.lang = getLang() === 'en' ? 'en' : 'zh-CN';
   document.documentElement.dataset.mode = state.settings.mode || 'window';
   applyStaticI18n();
+  applyModeCopy();
   applyTheme(false);
   applyMotion(state.settings.motionLevel || 'full');
   dom.btnList.classList.toggle('is-active', state.view === 'list');

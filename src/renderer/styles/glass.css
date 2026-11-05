@@ -1,22 +1,26 @@
 /**
  * glass.css — 玻璃质感与基础控件
  *
- * 原则：
+ * 原则（对应 docs/design-glass.md 第二、六节）：
  * 1. 一个面板只允许**一层** backdrop-filter，嵌套模糊会叠加成糊状而且极耗 GPU；
- * 2. 所有交互动效只碰 transform / opacity / box-shadow，不触发重排；
- * 3. 高光用 ::before 的渐变模拟，不加额外 DOM。
+ * 2. 所有交互动效只碰 transform / opacity / box-shadow / filter，不触发重排；
+ * 3. 五步玻璃法：模糊 → 增色 → 叠白 → 亮边 → 折射，对应下面 .glass 的三条声明。
  */
 
 /* ------------------------------ 背景 ------------------------------ */
 
+/**
+ * 玻璃要成立，背后必须有明暗起伏——铺在纯色底上的 blur 只是一块脏布。
+ * 所以这里只做两团大半径渐变：左上一团偏蓝灰的高光，右下一团偏淡紫的阴影。
+ * 第三团会让背景重新变花，克制住。
+ */
 .app-bg {
   position: fixed;
   inset: 0;
   z-index: 0;
   background:
-    radial-gradient(120% 90% at 8% -10%, rgba(160, 178, 214, 0.55), transparent 62%),
-    radial-gradient(90% 80% at 96% 4%, rgba(178, 168, 208, 0.42), transparent 58%),
-    radial-gradient(120% 110% at 50% 118%, rgba(140, 158, 196, 0.4), transparent 60%),
+    radial-gradient(78% 62% at 12% -6%, rgba(186, 200, 226, 0.62), transparent 62%),
+    radial-gradient(72% 58% at 94% 96%, rgba(196, 190, 222, 0.46), transparent 60%),
     linear-gradient(168deg, var(--bg-1), var(--bg-2));
 }
 
@@ -25,14 +29,21 @@
   content: '';
   position: absolute;
   inset: 0;
-  opacity: 0.32;
+  opacity: 0.26;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/><feColorMatrix type='saturate' values='0'/></filter><rect width='140' height='140' filter='url(%23n)' opacity='0.32'/></svg>");
   mix-blend-mode: overlay;
   pointer-events: none;
 }
 
+:root[data-theme='dark'] .app-bg {
+  background:
+    radial-gradient(70% 58% at 10% -8%, rgba(96, 112, 154, 0.34), transparent 62%),
+    radial-gradient(66% 54% at 96% 98%, rgba(120, 106, 158, 0.26), transparent 60%),
+    linear-gradient(168deg, var(--bg-1), var(--bg-0));
+}
+
 :root[data-theme='dark'] .app-bg::after {
-  opacity: 0.18;
+  opacity: 0.14;
   mix-blend-mode: soft-light;
 }
 
@@ -41,20 +52,30 @@
   position: fixed;
   left: 0;
   top: 0;
-  width: 460px;
-  height: 460px;
-  margin: -230px 0 0 -230px;
+  width: 520px;
+  height: 520px;
+  margin: -260px 0 0 -260px;
   z-index: 1;
   border-radius: 50%;
   pointer-events: none;
   opacity: 0;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0) 62%);
+  background: radial-gradient(
+    circle,
+    rgba(255, 255, 255, 0.62) 0%,
+    rgba(255, 255, 255, 0.22) 34%,
+    rgba(255, 255, 255, 0) 68%
+  );
   transition: opacity 320ms var(--ease);
   will-change: transform;
 }
 
 :root[data-theme='dark'] .cursor-glow {
-  background: radial-gradient(circle, rgba(150, 168, 214, 0.16), rgba(150, 168, 214, 0) 64%);
+  background: radial-gradient(
+    circle,
+    rgba(150, 168, 214, 0.18) 0%,
+    rgba(150, 168, 214, 0.06) 36%,
+    rgba(150, 168, 214, 0) 68%
+  );
 }
 
 .cursor-glow.is-on {
@@ -63,14 +84,24 @@
 
 /* ------------------------------ 玻璃面板 ------------------------------ */
 
+/**
+ * 五步玻璃法落在这里：
+ *   模糊  backdrop-filter: blur(26px)
+ *   增色  saturate(175%) + 本体那点白色底
+ *   叠白  ::before 的顶部渐变
+ *   亮边  border 1px + inset 顶线
+ *   折射  两段 inset 阴影：上缘提亮、下缘压暗
+ */
 .glass {
   position: relative;
   background: var(--glass-1);
   border: 1px solid var(--glass-stroke);
   border-radius: var(--radius-l);
-  box-shadow: var(--shadow-1);
-  backdrop-filter: blur(30px) saturate(160%);
-  -webkit-backdrop-filter: blur(30px) saturate(160%);
+  box-shadow: var(--shadow-1),
+    inset 0 1px 0 var(--glass-hair),
+    inset 0 -1px 0 rgba(120, 134, 165, 0.05);
+  backdrop-filter: blur(26px) saturate(175%);
+  -webkit-backdrop-filter: blur(26px) saturate(175%);
 }
 
 /* 顶部内高光：玻璃"厚"的来源 */
@@ -79,13 +110,19 @@
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: linear-gradient(180deg, var(--glass-inner), transparent 42%);
+  background: linear-gradient(180deg, var(--glass-inner), transparent 38%);
   pointer-events: none;
-  opacity: 0.9;
+  opacity: 0.85;
 }
 
 .glass--flat {
   box-shadow: none;
+}
+
+/* 深色下顶部高光要收着，否则糊成一层灰雾 */
+:root[data-theme='dark'] .glass::before {
+  opacity: 1;
+  background: linear-gradient(180deg, var(--glass-inner), transparent 28%);
 }
 
 /* ------------------------------ 按钮 ------------------------------ */
@@ -95,22 +132,22 @@
   align-items: center;
   justify-content: center;
   gap: 7px;
-  height: 32px;
-  padding: 0 14px;
-  border-radius: 10px;
+  height: 34px;
+  padding: 0 15px;
+  border-radius: var(--radius-m);
   font-size: 12.5px;
   font-weight: 500;
   color: var(--ink-2);
   background: var(--glass-2);
   border: 1px solid var(--glass-stroke);
-  box-shadow: 0 1px 2px rgba(64, 76, 102, 0.06);
+  box-shadow: 0 1px 2px rgba(58, 72, 100, 0.05), inset 0 1px 0 var(--glass-hair);
   transition: transform var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease),
     background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
 }
 
 .btn:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-1);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-2);
   color: var(--ink-1);
 }
 
@@ -123,15 +160,16 @@
   pointer-events: none;
 }
 
+/* 主按钮：蓝灰 → 淡紫的极轻渐变，强调色只用这一次 */
 .btn--primary {
   color: #fff;
-  background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+  background: linear-gradient(135deg, var(--accent) 0%, var(--lilac) 145%);
   border-color: transparent;
-  box-shadow: 0 2px 8px rgba(85, 100, 142, 0.28);
+  box-shadow: 0 2px 10px rgba(86, 102, 140, 0.26), inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
 .btn--primary:hover {
-  box-shadow: 0 4px 16px rgba(85, 100, 142, 0.34);
+  box-shadow: 0 6px 20px rgba(86, 102, 140, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.26);
 }
 
 .btn--ghost {
@@ -151,27 +189,28 @@
 }
 
 .btn--sm {
-  height: 27px;
-  padding: 0 10px;
+  height: 28px;
+  padding: 0 11px;
   font-size: 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-s);
 }
 
 .icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-s);
   color: var(--ink-3);
   transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease),
     transform var(--t-fast) var(--ease);
 }
 
 .icon-btn:hover {
-  background: var(--accent-soft);
+  background: var(--glass-2);
   color: var(--ink-1);
+  transform: translateY(-1px);
 }
 
 .icon-btn:active {
@@ -194,21 +233,26 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  height: 32px;
-  padding: 0 11px;
-  border-radius: 10px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: var(--radius-m);
   color: var(--ink-3);
   background: var(--glass-2);
   border: 1px solid var(--glass-stroke);
+  box-shadow: inset 0 1px 0 var(--glass-hair);
   /* 可伸缩：宽屏时占 232px，窄屏时能被压到 96px 而不顶破工具栏 */
   flex: 0 1 232px;
   min-width: 96px;
-  transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
+  transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-base) var(--ease),
+    flex-basis var(--t-base) var(--ease), background var(--t-fast) var(--ease);
 }
 
+/* 聚焦：亮一圈边 + 外扩光晕，比单纯换边框色更有"被点亮"的感觉 */
 .field:focus-within {
   border-color: var(--accent-ring);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  background: var(--glass-3);
+  box-shadow: 0 0 0 3px var(--accent-soft), 0 4px 16px rgba(86, 102, 140, 0.12),
+    inset 0 1px 0 var(--glass-hair);
 }
 
 .field input {
@@ -227,9 +271,9 @@
 
 .input {
   width: 100%;
-  height: 32px;
-  padding: 0 11px;
-  border-radius: 10px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: var(--radius-m);
   background: var(--glass-2);
   border: 1px solid var(--glass-stroke);
   outline: 0;
@@ -248,7 +292,7 @@ select.input {
 
 textarea.input {
   height: auto;
-  padding: 9px 11px;
+  padding: 10px 12px;
   resize: vertical;
   font-family: 'Cascadia Mono', 'Consolas', monospace;
   font-size: 12px;
@@ -261,9 +305,10 @@ textarea.input {
   display: inline-flex;
   padding: 2px;
   gap: 2px;
-  border-radius: 10px;
+  border-radius: var(--radius-m);
   background: var(--glass-2);
   border: 1px solid var(--glass-stroke);
+  box-shadow: inset 0 1px 0 var(--glass-hair);
 }
 
 .segment button {
@@ -271,12 +316,13 @@ textarea.input {
   align-items: center;
   justify-content: center;
   gap: 5px;
-  height: 26px;
-  padding: 0 10px;
-  border-radius: 8px;
+  height: 28px;
+  padding: 0 11px;
+  border-radius: calc(var(--radius-m) - 2px);
   font-size: 12px;
   color: var(--ink-3);
-  transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+  transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease),
+    box-shadow var(--t-fast) var(--ease);
 }
 
 .segment button:hover {
@@ -286,7 +332,7 @@ textarea.input {
 .segment button.is-active {
   color: var(--accent-strong);
   background: var(--glass-3);
-  box-shadow: 0 1px 4px rgba(64, 76, 102, 0.1);
+  box-shadow: 0 1px 4px rgba(58, 72, 100, 0.1), inset 0 1px 0 var(--glass-hair);
 }
 
 /* ------------------------------ 标签 / 徽标 ------------------------------ */
@@ -295,9 +341,9 @@ textarea.input {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 21px;
-  padding: 0 8px;
-  border-radius: 7px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: var(--radius-pill);
   font-size: 11px;
   font-weight: 500;
   color: var(--ink-3);
@@ -345,11 +391,12 @@ textarea.input {
 
 .switch {
   position: relative;
-  width: 38px;
-  height: 22px;
-  border-radius: 11px;
+  width: 40px;
+  height: 23px;
+  border-radius: var(--radius-pill);
   background: var(--glass-edge);
   border: 1px solid var(--glass-stroke);
+  box-shadow: inset 0 1px 2px rgba(58, 72, 100, 0.08);
   transition: background var(--t-base) var(--ease);
   flex: none;
 }
@@ -359,20 +406,20 @@ textarea.input {
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 16px;
-  height: 16px;
+  width: 17px;
+  height: 17px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
-  transition: transform var(--t-base) var(--ease);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform var(--t-base) var(--ease-out);
 }
 
 .switch.is-on {
-  background: var(--accent);
+  background: linear-gradient(135deg, var(--accent), var(--lilac));
 }
 
 .switch.is-on::after {
-  transform: translateX(16px);
+  transform: translateX(17px);
 }
 
 /* 复选框：用 SVG 勾，避免不同平台原生样式差异 */
@@ -423,17 +470,17 @@ textarea.input {
   align-items: center;
   gap: 9px;
   max-width: 520px;
-  padding: 9px 15px;
-  border-radius: 12px;
+  padding: 10px 16px;
+  border-radius: var(--radius-m);
   font-size: 12.5px;
   color: var(--ink-1);
   background: var(--glass-3);
   border: 1px solid var(--glass-stroke);
-  box-shadow: var(--shadow-2);
-  backdrop-filter: blur(22px) saturate(160%);
-  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  box-shadow: var(--shadow-2), inset 0 1px 0 var(--glass-hair);
+  backdrop-filter: blur(24px) saturate(175%);
+  -webkit-backdrop-filter: blur(24px) saturate(175%);
   pointer-events: auto;
-  animation: toast-in 220ms var(--ease-out);
+  animation: toast-in 240ms var(--ease-out);
 }
 
 .toast.is-out {
@@ -456,8 +503,8 @@ textarea.input {
   margin-left: 4px;
   font-weight: 600;
   color: var(--accent-strong);
-  padding: 2px 4px;
-  border-radius: 6px;
+  padding: 2px 6px;
+  border-radius: var(--radius-s);
 }
 
 .toast__action:hover {
@@ -465,7 +512,7 @@ textarea.input {
 }
 
 @keyframes toast-in {
-  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
   to { opacity: 1; transform: none; }
 }
 
@@ -478,15 +525,15 @@ textarea.input {
 .menu {
   position: fixed;
   z-index: 95;
-  min-width: 196px;
-  padding: 5px;
-  border-radius: 12px;
+  min-width: 200px;
+  padding: 6px;
+  border-radius: var(--radius-m);
   background: var(--glass-3);
   border: 1px solid var(--glass-stroke);
-  box-shadow: var(--shadow-3);
-  backdrop-filter: blur(26px) saturate(170%);
-  -webkit-backdrop-filter: blur(26px) saturate(170%);
-  animation: menu-in 140ms var(--ease-out);
+  box-shadow: var(--shadow-3), inset 0 1px 0 var(--glass-hair);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  animation: menu-in 160ms var(--ease-out);
 }
 
 .menu__item {
@@ -494,9 +541,9 @@ textarea.input {
   align-items: center;
   gap: 9px;
   width: 100%;
-  height: 30px;
-  padding: 0 9px;
-  border-radius: 8px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--radius-s);
   font-size: 12.5px;
   color: var(--ink-2);
   text-align: left;
@@ -519,13 +566,14 @@ textarea.input {
 }
 
 .menu__label {
-  padding: 6px 9px 3px;
+  padding: 7px 10px 3px;
   font-size: 11px;
+  letter-spacing: 0.04em;
   color: var(--ink-4);
 }
 
 @keyframes menu-in {
-  from { opacity: 0; transform: scale(0.97) translateY(-3px); }
+  from { opacity: 0; transform: scale(0.97) translateY(-4px); }
   to { opacity: 1; transform: none; }
 }
 
@@ -535,7 +583,7 @@ textarea.input {
   position: fixed;
   inset: 0;
   z-index: 60;
-  background: rgba(30, 34, 46, 0.22);
+  background: rgba(30, 34, 46, 0.2);
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--t-base) var(--ease);
@@ -564,12 +612,12 @@ textarea.input {
   border-radius: var(--radius-xl);
   background: var(--glass-3);
   border: 1px solid var(--glass-stroke);
-  box-shadow: var(--shadow-3);
-  backdrop-filter: blur(34px) saturate(170%);
-  -webkit-backdrop-filter: blur(34px) saturate(170%);
+  box-shadow: var(--shadow-3), inset 0 1px 0 var(--glass-hair);
+  backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
   transform: translateX(calc(100% + 24px));
   opacity: 0;
-  transition: transform var(--t-slow) var(--ease-out), opacity var(--t-base) var(--ease);
+  transition: transform var(--t-enter) var(--ease-out), opacity var(--t-base) var(--ease);
   overflow: hidden;
 }
 
@@ -591,13 +639,13 @@ textarea.input {
   border-radius: var(--radius-xl);
   background: var(--glass-3);
   border: 1px solid var(--glass-stroke);
-  box-shadow: var(--shadow-3);
-  backdrop-filter: blur(34px) saturate(170%);
-  -webkit-backdrop-filter: blur(34px) saturate(170%);
-  transform: translate(-50%, -50%) scale(0.97);
+  box-shadow: var(--shadow-3), inset 0 1px 0 var(--glass-hair);
+  backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  transform: translate(-50%, -50%) scale(0.975);
   opacity: 0;
   pointer-events: none;
-  transition: transform var(--t-slow) var(--ease-out), opacity var(--t-base) var(--ease);
+  transition: transform var(--t-enter) var(--ease-out), opacity var(--t-base) var(--ease);
   overflow: hidden;
 }
 
@@ -613,7 +661,7 @@ textarea.input {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 18px 22px 12px;
+  padding: 20px 24px 14px;
   flex: none;
 }
 
@@ -626,7 +674,7 @@ textarea.input {
 .panel__sub {
   font-size: 12px;
   color: var(--ink-3);
-  margin-top: 2px;
+  margin-top: 3px;
 }
 
 .panel__body {
@@ -634,14 +682,14 @@ textarea.input {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0 22px 18px;
+  padding: 0 24px 20px;
 }
 
 .panel__foot {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 22px 18px;
+  padding: 14px 24px 18px;
   border-top: 1px solid var(--glass-edge);
   flex: none;
 }

@@ -3,123 +3,151 @@
  *
  * 原则：颜色、尺寸、时长只在这里定义，组件里不写死数值。
  * 换肤 / 改密度 / 做紧凑模式都只需要动这一个文件。
+ *
+ * 3.1 调整（依据 docs/design-glass.md）：
+ * 1. 配色收敛到「蓝灰主色 + 淡紫强调色」，其余全部走灰阶；
+ * 2. 分类色降饱和到 30%~40%，保留色相但不再像交通标志；
+ * 3. 玻璃不透明度提到 68%~88%，既通透又能压住文字；
+ * 4. 圆角固定四档 10/12/16/20，杜绝 9px、11px、13px 这种零碎值。
  */
 
 :root {
   color-scheme: light;
 
   /* ---------- 底色与文字 ---------- */
-  --bg-0: #eef1f7;
-  --bg-1: #e7ebf3;
-  --bg-2: #dfe4ee;
-  --ink-1: #23262e;
-  --ink-2: #4a4f5c;
-  --ink-3: #777d8c;
-  --ink-4: #9aa0ae;
+  /* 近白三级：玻璃压在上面时，这三级灰就是"玻璃后面的明暗起伏" */
+  --bg-0: #f5f7fb;
+  --bg-1: #eef1f7;
+  --bg-2: #e4e9f2;
+  --ink-1: #1b1e25;
+  --ink-2: #49505f;
+  --ink-3: #7a8291;
+  --ink-4: #a5acb9;
 
-  /* ---------- 玻璃 ---------- */
-  --glass-1: rgba(255, 255, 255, 0.55);
-  --glass-2: rgba(255, 255, 255, 0.72);
-  --glass-3: rgba(255, 255, 255, 0.86);
-  --glass-stroke: rgba(255, 255, 255, 0.72);
-  --glass-inner: rgba(255, 255, 255, 0.5);
-  --glass-edge: rgba(120, 134, 165, 0.16);
-  --shadow-1: 0 1px 2px rgba(64, 76, 102, 0.05), 0 8px 20px rgba(64, 76, 102, 0.06);
-  --shadow-2: 0 2px 6px rgba(64, 76, 102, 0.07), 0 18px 44px rgba(64, 76, 102, 0.11);
-  --shadow-3: 0 6px 16px rgba(56, 66, 92, 0.1), 0 32px 70px rgba(56, 66, 92, 0.18);
+  /* ---------- 玻璃 ----------
+     68 / 78 / 88 三档：卡片、控件、浮层。
+     低于 65% 文字开始透背景，高于 90% 就不像玻璃了。 */
+  --glass-1: rgba(255, 255, 255, 0.68);
+  --glass-2: rgba(255, 255, 255, 0.78);
+  --glass-3: rgba(255, 255, 255, 0.88);
+  /* 1px 高光描边：细、淡，只在转折处闪一下 */
+  --glass-stroke: rgba(255, 255, 255, 0.62);
+  /* 顶部发丝线，比描边更亮，专门做"厚度" */
+  --glass-hair: rgba(255, 255, 255, 0.2);
+  /* 顶部叠加白光，模拟玻璃上表面的反光 */
+  --glass-inner: rgba(255, 255, 255, 0.52);
+  /* 分隔线 / 极淡的填充 */
+  --glass-edge: rgba(120, 134, 165, 0.14);
+
+  /* 阴影统一带蓝调，纯黑阴影在浅底上会发灰 */
+  --shadow-1: 0 1px 2px rgba(58, 72, 100, 0.04), 0 10px 26px rgba(58, 72, 100, 0.06);
+  --shadow-2: 0 2px 6px rgba(58, 72, 100, 0.06), 0 20px 48px rgba(58, 72, 100, 0.12);
+  --shadow-3: 0 6px 16px rgba(52, 64, 92, 0.1), 0 34px 76px rgba(52, 64, 92, 0.18);
 
   /* ---------- 主色（只两个：蓝灰 + 淡紫） ---------- */
-  --accent: #6b7ca8;
-  --accent-strong: #55648e;
-  --accent-soft: rgba(107, 124, 168, 0.12);
-  --accent-ring: rgba(107, 124, 168, 0.3);
-  --lilac: #8d86b8;
-  --lilac-soft: rgba(141, 134, 184, 0.14);
+  --accent: #6f7fa2;
+  --accent-strong: #56668c;
+  --accent-soft: rgba(111, 127, 162, 0.12);
+  --accent-ring: rgba(111, 127, 162, 0.3);
+  /* 强调色只允许出现在「需要被看见一次」的地方 */
+  --lilac: #9a92c4;
+  --lilac-soft: rgba(154, 146, 196, 0.13);
 
-  /* ---------- 分类色（低饱和莫兰迪，色相按需求固定） ----------
-     低饱和不等于看不清：这批取值把明度压低、彩度保留在 35%~45% 之间，
-     既维持莫兰迪的灰调，又能在 20px 的图标上分辨出黄/蓝/红/绿。 */
-  --tone-amber: #a87a30;
-  --tone-amber-bg: rgba(186, 142, 62, 0.18);
-  --tone-blue: #4e7194;
-  --tone-blue-bg: rgba(78, 113, 148, 0.17);
-  --tone-rose: #a95e5e;
-  --tone-rose-bg: rgba(169, 94, 94, 0.16);
-  --tone-sage: #5a8a6b;
-  --tone-sage-bg: rgba(90, 138, 107, 0.17);
-  --tone-slate: #6e7683;
-  --tone-slate-bg: rgba(110, 118, 131, 0.16);
-  --tone-violet: #7566a3;
-  --tone-violet-bg: rgba(117, 102, 163, 0.17);
-  --tone-teal: #3f8a83;
-  --tone-teal-bg: rgba(63, 138, 131, 0.17);
+  /* ---------- 分类色（语义色，不是装饰色） ----------
+     色相按需求固定（图片黄 / 视频蓝 / 文档红 / 音频绿 / 压缩灰 / 代码紫 / 程序青），
+     彩度统一收到 30%~40%、明度压低，像褪色的印刷色：
+     20px 图标上仍能分辨，但不会把界面拉花。 */
+  --tone-amber: #ab8a52;
+  --tone-amber-bg: rgba(171, 138, 82, 0.13);
+  --tone-blue: #5b7794;
+  --tone-blue-bg: rgba(91, 119, 148, 0.13);
+  --tone-rose: #a97070;
+  --tone-rose-bg: rgba(169, 112, 112, 0.12);
+  --tone-sage: #6b8a75;
+  --tone-sage-bg: rgba(107, 138, 117, 0.13);
+  --tone-slate: #757c88;
+  --tone-slate-bg: rgba(117, 124, 136, 0.12);
+  --tone-violet: #7c74a0;
+  --tone-violet-bg: rgba(124, 116, 160, 0.13);
+  --tone-teal: #5a8a86;
+  --tone-teal-bg: rgba(90, 138, 134, 0.13);
 
   /* ---------- 尺寸 ---------- */
-  --titlebar-h: 44px;
+  --titlebar-h: 46px;
   --sidebar-w: 218px;
   --details-w: 318px;
   --drawer-w: 540px;
-  --row-h: 54px;
+  --row-h: 56px;
   /* 网格卡片高度：虚拟滚动按它计算行距，改这里 JS 会自动跟随 */
-  --card-h: 188px;
-  --radius-s: 8px;
+  --card-h: 196px;
+  /* 只四档圆角，不许再出现零碎值 */
+  --radius-s: 10px;
   --radius-m: 12px;
   --radius-l: 16px;
-  --radius-xl: 22px;
+  --radius-xl: 20px;
+  --radius-pill: 999px;
   --gutter: 0px;
 
-  /* ---------- 动效（150–250ms，90fps 友好） ---------- */
+  /* ---------- 动效 ----------
+     150 微反馈 / 190 常态 / 260 入场 / 320 模式切换。
+     入场缓动先快后慢，像东西落定。 */
   --t-fast: 150ms;
   --t-base: 190ms;
-  --t-slow: 240ms;
+  --t-enter: 260ms;
+  --t-mode: 320ms;
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  /* 列表逐项入场的错开步长 */
+  --stagger: 14ms;
 }
 
-/* ---------- 深色：墨黑带一点冷调，不是纯黑 ---------- */
+/* ---------- 深色：墨黑带一点冷调，不是纯黑 ----------
+   深色下近白玻璃会显脏，改成「暗玻璃 + 顶部亮边」，即 Spatial Glass。 */
 :root[data-theme='dark'] {
   color-scheme: dark;
 
-  --bg-0: #0a0a0d;
-  --bg-1: #0e0e13;
-  --bg-2: #12121a;
+  --bg-0: #0b0c10;
+  --bg-1: #101117;
+  --bg-2: #16171f;
   --ink-1: #eceef4;
-  --ink-2: #b6bbc8;
-  --ink-3: #8b91a1;
-  --ink-4: #6b7180;
+  --ink-2: #b4bac6;
+  --ink-3: #89909f;
+  --ink-4: #6a7080;
 
-  --glass-1: rgba(28, 29, 38, 0.5);
-  --glass-2: rgba(30, 31, 41, 0.68);
-  --glass-3: rgba(34, 35, 46, 0.84);
-  --glass-stroke: rgba(255, 255, 255, 0.08);
-  --glass-inner: rgba(255, 255, 255, 0.11);
-  --glass-edge: rgba(255, 255, 255, 0.05);
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 24px rgba(0, 0, 0, 0.32);
-  --shadow-2: 0 2px 8px rgba(0, 0, 0, 0.45), 0 20px 46px rgba(0, 0, 0, 0.42);
-  --shadow-3: 0 8px 20px rgba(0, 0, 0, 0.5), 0 36px 80px rgba(0, 0, 0, 0.55);
+  --glass-1: rgba(48, 51, 64, 0.66);
+  --glass-2: rgba(54, 57, 71, 0.76);
+  --glass-3: rgba(58, 61, 76, 0.88);
+  --glass-stroke: rgba(255, 255, 255, 0.09);
+  --glass-hair: rgba(255, 255, 255, 0.06);
+  --glass-inner: rgba(255, 255, 255, 0.1);
+  --glass-edge: rgba(255, 255, 255, 0.07);
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.42), 0 12px 28px rgba(0, 0, 0, 0.34);
+  --shadow-2: 0 2px 8px rgba(0, 0, 0, 0.46), 0 24px 52px rgba(0, 0, 0, 0.44);
+  --shadow-3: 0 8px 20px rgba(0, 0, 0, 0.5), 0 38px 84px rgba(0, 0, 0, 0.56);
 
   --accent: #8b9ac4;
-  --accent-strong: #a3b1d8;
+  --accent-strong: #a6b3d8;
   --accent-soft: rgba(139, 154, 196, 0.16);
   --accent-ring: rgba(139, 154, 196, 0.34);
-  --lilac: #a49dcc;
-  --lilac-soft: rgba(164, 157, 204, 0.16);
+  --lilac: #a9a2cf;
+  --lilac-soft: rgba(169, 162, 207, 0.15);
 
   /* 深色下反向处理：提明度保对比，彩度同样收敛，避免在深底上炸眼 */
-  --tone-amber: #dcb47a;
-  --tone-amber-bg: rgba(220, 180, 122, 0.19);
-  --tone-blue: #8fb0d8;
-  --tone-blue-bg: rgba(143, 176, 216, 0.19);
-  --tone-rose: #dc9a9a;
-  --tone-rose-bg: rgba(220, 154, 154, 0.19);
-  --tone-sage: #98c5a8;
-  --tone-sage-bg: rgba(152, 197, 168, 0.19);
+  --tone-amber: #cfae7c;
+  --tone-amber-bg: rgba(207, 174, 124, 0.15);
+  --tone-blue: #93aec9;
+  --tone-blue-bg: rgba(147, 174, 201, 0.15);
+  --tone-rose: #cf9c9c;
+  --tone-rose-bg: rgba(207, 156, 156, 0.15);
+  --tone-sage: #9dbca8;
+  --tone-sage-bg: rgba(157, 188, 168, 0.15);
   --tone-slate: #a3aab8;
-  --tone-slate-bg: rgba(163, 170, 184, 0.18);
-  --tone-violet: #b2a8dc;
-  --tone-violet-bg: rgba(178, 168, 220, 0.19);
-  --tone-teal: #84c6bf;
-  --tone-teal-bg: rgba(132, 198, 191, 0.19);
+  --tone-slate-bg: rgba(163, 170, 184, 0.14);
+  --tone-violet: #b1a8d3;
+  --tone-violet-bg: rgba(177, 168, 211, 0.15);
+  --tone-teal: #8fbdb8;
+  --tone-teal-bg: rgba(143, 189, 184, 0.15);
 }
 
 * {
@@ -179,7 +207,7 @@ textarea {
 
 ::-webkit-scrollbar-thumb {
   background: var(--glass-edge);
-  border-radius: 8px;
+  border-radius: var(--radius-s);
   border: 3px solid transparent;
   background-clip: content-box;
 }
@@ -200,7 +228,8 @@ html.theme-anim * {
 html.motion-soft {
   --t-fast: 110ms;
   --t-base: 140ms;
-  --t-slow: 180ms;
+  --t-enter: 180ms;
+  --stagger: 8ms;
 }
 
 html.motion-off *,
@@ -221,5 +250,5 @@ html.motion-off *::after {
 :focus-visible {
   outline: 2px solid var(--accent-ring);
   outline-offset: 2px;
-  border-radius: 6px;
+  border-radius: var(--radius-s);
 }
