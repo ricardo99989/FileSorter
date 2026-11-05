@@ -19,30 +19,30 @@ import { formatSize } from './format.js';
  * 把它们塞进「其他」会让那一段吃掉大半个环，失去意义。
  */
 export const WHEEL_BUCKETS = [
-  { key: 'dir', label: '文件夹', icon: 'folder', tone: 'violet', match: (e) => e.isDir },
+  { key: 'dir', label: '文件夹', icon: 'folder', tone: 'slate', match: (e) => e.isDir },
   {
     key: 'image',
     label: '图片',
     icon: 'image',
-    tone: 'amber',
+    tone: 'blue',
     match: (e) => e.desc?.category === 'image' || e.desc?.category === 'design',
   },
   {
     key: 'video',
     label: '视频',
     icon: 'video',
-    tone: 'blue',
+    tone: 'violet',
     match: (e) => e.desc?.category === 'video' || e.desc?.category === 'model',
   },
   {
     key: 'doc',
     label: '文档',
     icon: 'doc',
-    tone: 'rose',
+    tone: 'teal',
     match: (e) => ['doc', 'sheet', 'slide'].includes(e.desc?.category),
   },
-  { key: 'audio', label: '音频', icon: 'audio', tone: 'sage', match: (e) => e.desc?.category === 'audio' },
-  { key: 'other', label: '其他', icon: 'file', tone: 'slate', match: () => true },
+  { key: 'audio', label: '音频', icon: 'audio', tone: 'slate', match: (e) => e.desc?.category === 'audio' },
+  { key: 'other', label: '其他', icon: 'file', tone: 'mist', match: () => true },
 ];
 
 /** 某个条目落在哪个桶（顺序即优先级，other 的 match 永远为真兜底） */

@@ -11,14 +11,14 @@ import { t } from '../../../shared/i18n.mjs';
 
 /** 分类 → 展示色（和列表里的图标色保持一致，方便对照） */
 const TONE_VAR = {
-  image: 'var(--tone-amber)',
-  video: 'var(--tone-blue)',
-  document: 'var(--tone-rose)',
-  audio: 'var(--tone-sage)',
+  image: 'var(--tone-blue)',
+  video: 'var(--tone-violet)',
+  document: 'var(--tone-teal)',
+  audio: 'var(--tone-slate)',
   archive: 'var(--tone-slate)',
-  code: 'var(--tone-violet)',
-  program: 'var(--tone-teal)',
-  other: 'var(--ink-4)',
+  code: 'var(--tone-slate)',
+  program: 'var(--tone-slate)',
+  other: 'var(--tone-mist)',
 };
 
 /** 拼 conic-gradient：每段的角度按体积占比累加 */

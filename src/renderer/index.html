@@ -11,6 +11,8 @@
     <link rel="stylesheet" href="./styles/glass.css" />
     <link rel="stylesheet" href="./styles/app.css" />
     <link rel="stylesheet" href="./styles/panels.css" />
+    <!-- 材质档位要在样式应用前定好，所以放在 head 末尾同步执行 -->
+    <script src="./js/boot.js"></script>
   </head>
   <body>
     <div class="app-bg" aria-hidden="true"></div>
@@ -214,6 +216,33 @@
     <section class="modal" id="modal" aria-hidden="true"></section>
     <div class="menu" id="menu" hidden></div>
     <div class="toasts" id="toasts"></div>
+
+    <!-- 折射滤镜：feDisplacementMap 拿 feTurbulence 当位移图，把背后的内容按噪声场拉扯。
+         baseFrequency 压到 0.007/0.011 是为了让扭曲呈缓慢的有机波形 —— 频率一高就成毛玻璃噪点。
+         scale 14px 是"能看出来但不影响读字"的上限，再大菜单文字会飘。
+         只挂在浮动层上：它们下面压着文件卡片这类真实内容，位移才有东西可折。
+         主面板不行 —— acrylic 档位下桌面是 DWM 画的，在页面之下，backdrop 采不到。 -->
+    <svg class="fx-defs" aria-hidden="true" focusable="false">
+      <defs>
+        <filter
+          id="liquidRefract"
+          x="-12%"
+          y="-12%"
+          width="124%"
+          height="124%"
+          color-interpolation-filters="sRGB"
+        >
+          <feTurbulence type="fractalNoise" baseFrequency="0.007 0.011" numOctaves="2" seed="17" result="warp" />
+          <feDisplacementMap
+            in="SourceGraphic"
+            in2="warp"
+            scale="14"
+            xChannelSelector="R"
+            yChannelSelector="G"
+          />
+        </filter>
+      </defs>
+    </svg>
 
     <script type="module" src="./js/app.js"></script>
   </body>

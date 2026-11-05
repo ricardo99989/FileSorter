@@ -132,27 +132,28 @@ export function icon(name, size = 16, extraClass = '') {
  *
  * 这里有两层分类：整理用的八大类（图片/视频/文档/音频/压缩包/程序/代码/其他，见主进程
  * classifier.js），和「智能说明」里的细分类型（doc/sheet/slide/design/data…）。
- * 图标形状可以细分，但**颜色必须跟整理分类走** —— 否则同一个 pptx，图标是琥珀色、
+ * 图标形状可以细分，但**颜色必须跟整理分类走** —— 否则同一个 pptx，图标是浅灰青、
  * 整理时却进了「文档」文件夹，用户看到两套颜色会犯嘀咕。
  *
- * 因此色调统一：文档（doc/sheet/slide）一律红，设计稿并进图片黄，配置数据并进代码紫，
- * 字体/3D 归到灰蓝，跟它们实际会去的文件夹保持一致。
+ * 因此色调统一到四档灰：图片/设计稿=浅灰蓝，视频/3D=浅灰紫，文档三件套=浅灰青，
+ * 其余全部中性灰。原先七种褪色印刷色（琥珀/玫/鼠尾草/青…）全部撤掉 ——
+ * 界面只允许两个主色，图标再占七个色相，整体就花了。
  */
 export const CATEGORY_META = {
-  folder: { icon: 'folder', tone: 'blue' },
-  image: { icon: 'image', tone: 'amber' },
-  design: { icon: 'design', tone: 'amber' },
-  video: { icon: 'video', tone: 'blue' },
-  model: { icon: 'model', tone: 'blue' },
-  audio: { icon: 'audio', tone: 'sage' },
-  doc: { icon: 'doc', tone: 'rose' },
-  sheet: { icon: 'sheet', tone: 'rose' },
-  slide: { icon: 'slide', tone: 'rose' },
-  code: { icon: 'code', tone: 'violet' },
-  data: { icon: 'data', tone: 'violet' },
+  folder: { icon: 'folder', tone: 'slate' },
+  image: { icon: 'image', tone: 'blue' },
+  design: { icon: 'design', tone: 'blue' },
+  video: { icon: 'video', tone: 'violet' },
+  model: { icon: 'model', tone: 'violet' },
+  audio: { icon: 'audio', tone: 'slate' },
+  doc: { icon: 'doc', tone: 'teal' },
+  sheet: { icon: 'sheet', tone: 'teal' },
+  slide: { icon: 'slide', tone: 'teal' },
+  code: { icon: 'code', tone: 'slate' },
+  data: { icon: 'data', tone: 'slate' },
   archive: { icon: 'archive', tone: 'slate' },
   font: { icon: 'font', tone: 'slate' },
-  app: { icon: 'app', tone: 'teal' },
+  app: { icon: 'app', tone: 'slate' },
   other: { icon: 'file', tone: 'slate' },
 };
 

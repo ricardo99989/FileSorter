@@ -286,8 +286,10 @@ function resolvedTheme() {
 function applyTheme(animate = true) {
   const theme = resolvedTheme();
   if (animate) {
+    // 窗口开到这里就够了：DWM 重采样 acrylic tint 要 300~500ms，
+    // 应用主题跟着一起淡过去，两边才不至于一个快一个慢露出马脚。
     document.documentElement.classList.add('theme-anim');
-    setTimeout(() => document.documentElement.classList.remove('theme-anim'), 320);
+    setTimeout(() => document.documentElement.classList.remove('theme-anim'), 480);
   }
   document.documentElement.dataset.theme = theme;
   const label =
@@ -1696,6 +1698,29 @@ dom.drawer.addEventListener('change', async (event) => {
 
 /* ------------------------------ 事件：设置弹窗 ------------------------------ */
 
+dom.modal.addEventListener('input', (event) => {
+  const slider = event.target.closest('[data-slider]');
+  if (!slider) return;
+  const key = slider.dataset.slider;
+  const value = Number(slider.value);
+  const label = dom.modal.querySelector(`[data-slider-val="${key}"]`);
+  if (label) label.textContent = `${value}%`;
+  if (key === 'mist') {
+    // 立即生效但不重渲染：拖动时重渲染会让滑块本身被换掉，拖动直接断
+    document.documentElement.style.setProperty('--mist', String(value));
+  }
+});
+
+dom.modal.addEventListener('change', async (event) => {
+  const slider = event.target.closest('[data-slider]');
+  if (!slider) return;
+  const key = slider.dataset.slider;
+  if (key === 'mist') {
+    state.settings.mist = Number(slider.value);
+    await api.settings.save({ mist: state.settings.mist });
+  }
+});
+
 dom.modal.addEventListener('click', async (event) => {
   const tab = event.target.closest('[data-set-tab]');
   if (tab) {
@@ -2274,6 +2299,12 @@ async function boot() {
   applyModeCopy();
   applyTheme(false);
   applyMotion(state.settings.motionLevel || 'full');
+  // 雾度从 store 恢复：tokens.css 里的 14 只是"还没读到设置"时的兜底值，
+  // 用户上次拖到 0 或 30，重新打开必须还是那个值。
+  document.documentElement.style.setProperty(
+    '--mist',
+    String(Number(state.settings.mist) || 0),
+  );
   dom.btnList.classList.toggle('is-active', state.view === 'list');
   dom.btnGrid.classList.toggle('is-active', state.view === 'grid');
   dom.details.classList.toggle('is-collapsed', !state.detailOpen);

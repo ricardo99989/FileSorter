@@ -35,3 +35,5 @@ desktop.ini
 coverage/
 *.snap
 _filesorter-test-*/
+# 冒烟截图中间产物（原始全屏图、对照块、放大裁切）；成品在 docs/
+_probe/

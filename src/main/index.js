@@ -27,6 +27,8 @@ const smokeDir = process.env.SMOKE_DIR || '';
 
 /** @type {BrowserWindow | null} */
 let mainWindow = null;
+/** 冒烟截图用的合成桌面，见 createWindow 里 SMOKE_BACKDROP 那段 */
+let backdropWindow = null;
 /** @type {Tray | null} */
 let tray = null;
 let store = null;
@@ -45,6 +47,36 @@ function shellColor() {
   const theme = store ? store.get().theme : 'system';
   const dark = theme === 'dark' || (theme === 'system' && nativeTheme.shouldUseDarkColors);
   return dark ? '#0a0a0d' : '#e9ecf2';
+}
+
+/**
+ * DWM 亚克力只有 Windows 11（build >= 22000）才有。
+ * 它会由系统在窗口背后做真实高斯模糊 —— 这是唯一能"透出模糊桌面"的途径，
+ * 因为 Chromium 的 backdrop-filter 取不到窗口外的像素。
+ */
+let useAcrylic = false;
+
+function detectAcrylic() {
+  if (process.platform !== 'win32') return false;
+  // getSystemVersion() 形如 "10.0.26200"
+  const build = Number(String(process.getSystemVersion() || '').split('.')[2] || 0);
+  return build >= 22000;
+}
+
+/**
+ * 让系统明暗跟随应用主题。
+ *
+ * DWM 亚克力的 tint 是按「系统明暗」取的，不认应用里的 data-theme。
+ * 应用切深色而系统还是浅色时，就会得到「浅色 tint + 白色文字」—— 白字压白玻璃，
+ * 一个字都看不见（真踩过）。把 themeSource 钉过去，材质和文字才在同一侧。
+ *
+ * 实测：改 themeSource 后 DWM 会在约 300~500ms 内重采样 tint，不需要重贴材质。
+ * （早先以为要 setBackgroundMaterial('none') 再贴回来，实测那条路只会让窗口
+ * 先 transparent 闪一下，tint 该什么时候变还是什么时候变。）
+ */
+function syncNativeTheme() {
+  const theme = store ? store.get().theme : 'system';
+  nativeTheme.themeSource = theme === 'dark' ? 'dark' : theme === 'light' ? 'light' : 'system';
 }
 
 /* ------------------------------ 窗口模式 ------------------------------ */
@@ -108,8 +140,45 @@ function applyMode(mode, { silent = false } = {}) {
 
 function createWindow() {
   const prefs = store.get();
-  const mode = MODE_SPEC[prefs.mode] ? prefs.mode : 'window';
+  // --smoke-mode= 显式指定显示模式。不加这个参数时用 store 里的值，
+  // 而上一次冒烟可能已经把 mode 存成 dock/sidebar，接着拍窗口模式的图就会拍到一小条。
+  const modeArg = process.argv.find((a) => a.startsWith('--smoke-mode='));
+  const forcedMode = modeArg ? modeArg.split('=')[1] : '';
+  const mode = MODE_SPEC[forcedMode] ? forcedMode : MODE_SPEC[prefs.mode] ? prefs.mode : 'window';
   const spec = MODE_SPEC[mode];
+  useAcrylic = detectAcrylic();
+
+  /**
+   * 冒烟截图专用：垫一张合成桌面。
+   *
+   * 亚克力档位下窗口底板是全透明的，背后究竟是用户的浏览器、蓝天草地还是一屏代码，
+   * 截图完全是两个东西。文档截图必须可复现，所以给了 SMOKE_BACKDROP 就先铺一层
+   * 内容已知的全屏背景，再把主窗口移到它上面。
+   */
+  if (isSmoke && process.env.SMOKE_BACKDROP) {
+    const d = screen.getPrimaryDisplay();
+    backdropWindow = new BrowserWindow({
+      x: 0,
+      y: 0,
+      width: d.size.width,
+      height: d.size.height,
+      frame: false,
+      skipTaskbar: true,
+      focusable: false,
+      backgroundColor: '#1b2430',
+      // 先不 show：合成桌面一旦先显示，DWM 会按那一刻的系统明暗给后面的窗口取 tint，
+      // 主题是 dark 也会拿到浅色 tint（白字压白玻璃，一个字都看不见）。
+      show: false,
+    });
+    backdropWindow.loadFile(path.join(__dirname, 'backdrop.html'), {
+      // 把当前主题带给合成桌面：深色主题下要一张暮色桌面，
+      // 配大亮天的话亚克力一透，深色模式的截图就成灰蓝一团。
+      query: { theme: store.get().theme === 'dark' ? 'dark' : 'light' },
+    });
+    // 建合成桌面这一步会把 themeSource 弹回 system，必须在建主窗之前再钉一次。
+    // 少了这一行，深色主题下主窗口会拿到浅色 tint —— 白字压白玻璃，全看不清楚。
+    syncNativeTheme();
+  }
 
   mainWindow = new BrowserWindow({
     width: prefs.window.width,
@@ -119,7 +188,9 @@ function createWindow() {
     show: false,
     frame: false,
     roundedCorners: true,
-    backgroundColor: shellColor(),
+    // 亚克力由系统在窗口背后绘制，页面底板必须透明才透得上来
+    backgroundColor: useAcrylic ? '#00000000' : shellColor(),
+    ...(useAcrylic ? { backgroundMaterial: 'acrylic' } : {}),
     title: 'FileSorter',
     skipTaskbar: spec.skipTaskbar,
     alwaysOnTop: spec.alwaysOnTop,
@@ -162,7 +233,9 @@ function createWindow() {
     });
   }
 
-  mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), {
+    query: { material: useAcrylic ? 'acrylic' : 'solid' },
+  });
 
   // 记住窗口尺寸，下次原样打开
   mainWindow.on('close', (event) => {
@@ -189,6 +262,18 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  // 合成桌面只是背景，主窗口必须压在它上面，否则截出来是空的。
+  // 放在主窗口就绪之后再 show，DWM 才会按主窗口创建时的系统明暗取 tint。
+  if (backdropWindow && !backdropWindow.isDestroyed()) {
+    // 冒烟用 showInactive 开窗，宿主 IDE / 浏览器随时可能抢回前台把两层一起盖住，
+    // desktopCapturer 就会拍到别人的界面。给两层不同的 alwaysOnTop 层级：
+    // 桌面 floating、应用 screen-saver，既都在普通窗口之上，又保证应用压着桌面。
+    backdropWindow.setAlwaysOnTop(true, 'screen-saver');
+    backdropWindow.showInactive();
+    mainWindow.setAlwaysOnTop(true, 'screen-saver');
+    mainWindow.moveTop();
+  }
 
   if (isSmoke) attachSmokeProbe(mainWindow);
 }
@@ -416,7 +501,13 @@ function attachSmokeProbe(win) {
         await new Promise((r) => setTimeout(r, 600));
         document.getElementById('btnOrganize').click();
       })()`,
-      settings: `document.getElementById('btnSettings').click()`,
+      settings: `(async () => {
+        document.getElementById('btnSettings').click();
+        await new Promise((r) => setTimeout(r, 400));
+        // 外观页设置项较多，滚到底才能看到"玻璃雾度"那一行
+        const body = document.getElementById('settingsBody');
+        if (body) body.scrollTop = body.scrollHeight;
+      })()`,
       rules: `(async () => {
         document.getElementById('btnSettings').click();
         await new Promise((r) => setTimeout(r, 300));
@@ -491,6 +582,13 @@ function attachSmokeProbe(win) {
           avgFrameMs: +(elapsed / 30).toFixed(2),
         }));
       })()`,
+      themec: `(() => {
+        console.log('THEMEC ' + JSON.stringify({
+          dataTheme: document.documentElement.dataset.theme,
+          dataMaterial: document.documentElement.dataset.material,
+          cls: document.documentElement.className,
+        }));
+      })()`,
       metrics: `(() => {
         const vp = document.getElementById('viewport');
         console.log('METRICS ' + JSON.stringify({
@@ -558,12 +656,61 @@ function attachSmokeProbe(win) {
         })()`,
       )
       .catch(() => {});
-    /* 再把合成指针挪到左上角：鼠标可能正压在某张卡片上，截图会带出悬停态和勾选框 */
+    /* 合成指针一律挪回窗口左上角：留在系统任务栏上会弹出宿主的窗口缩略图，
+       那张置顶预览窗连 alwaysOnTop 都压不住，截图就废了。 */
     win.webContents.sendInputEvent({ type: 'mouseMove', x: 2, y: 2 });
+    /* 但这次复位会把 wheelhover 刚点亮的高亮清掉，所以复位之后再补一次合成 hover。
+       顺序不能反：先 hover 再移指针，Chromium 会按真实指针位置重新派发 pointerout。 */
+    if (step === 'wheelhover') {
+      await win.webContents
+        .executeJavaScript(
+          `(() => {
+            const seg = [...document.querySelectorAll('.wheel__seg')][2];
+            if (seg) seg.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+          })()`,
+        )
+        .catch(() => {});
+    }
     await new Promise((resolve) => setTimeout(resolve, 260));
 
     try {
-      const image = await win.webContents.capturePage();
+      /*
+       * --capture-screen 走系统全屏截图。
+       * capturePage 只截窗口自己的绘制树，亚克力是 DWM 画在窗口背后的，
+       * 用 capturePage 拍出来永远是一片透明，验证不了"透出桌面"这件事。
+       */
+      let image;
+      if (process.argv.includes('--capture-screen')) {
+        const { desktopCapturer } = require('electron');
+        const display = screen.getPrimaryDisplay();
+        // 冒烟的各个步骤可能跑上好几秒，期间前台窗口又换了人。截图前把两层再钉一次，
+        // 并留一帧给 DWM 重新排层，否则会拍到空桌面或半个窗口。
+        if (backdropWindow && !backdropWindow.isDestroyed()) {
+          backdropWindow.setAlwaysOnTop(true, 'floating');
+          backdropWindow.showInactive();
+          win.setAlwaysOnTop(true, 'screen-saver');
+          win.moveTop();
+          // 宿主窗口若正开着中文输入法，候选条是系统级置顶窗，会飘到应用上面。
+          // 把焦点收回来、并让页面里任何输入框失焦，候选条就会随组合结束自行收起。
+          win.focus();
+          await win.webContents
+            .executeJavaScript(
+              '(() => { const a = document.activeElement; if (a && a.blur) a.blur(); })()',
+            )
+            .catch(() => {});
+          await new Promise((resolve) => setTimeout(resolve, 220));
+        }
+        const sources = await desktopCapturer.getSources({
+          types: ['screen'],
+          thumbnailSize: { width: display.size.width, height: display.size.height },
+        });
+        // 多显示器时 sources[0] 不一定是主屏，按 display_id 认领
+        const source =
+          sources.find((s) => String(s.display_id) === String(display.id)) || sources[0];
+        image = source ? source.thumbnail : await win.webContents.capturePage();
+      } else {
+        image = await win.webContents.capturePage();
+      }
       const target = captureArg
         ? path.resolve(captureArg.slice('--capture='.length))
         : path.join(app.getPath('temp'), 'filesorter-smoke.png');
@@ -596,6 +743,8 @@ app.whenReady().then(async () => {
 
   store = createStore(app.getPath('userData'));
   await store.load();
+  // 必须在建窗之前：窗口一创建，DWM 就会按当时的系统明暗取材质 tint
+  syncNativeTheme();
   undo = createUndo(app.getPath('userData'));
   tags = createTags(app.getPath('userData'));
   await tags.load();
@@ -638,18 +787,36 @@ app.whenReady().then(async () => {
   const sizeArg = process.argv.find((arg) => arg.startsWith('--smoke-size='));
   if (isSmoke && sizeArg && mainWindow && !mainWindow.isDestroyed()) {
     const [w, h] = sizeArg.split('=')[1].split('x').map(Number);
-    if (w > 0 && h > 0) mainWindow.setSize(Math.round(w), Math.round(h));
+    if (w > 0 && h > 0) {
+      mainWindow.setSize(Math.round(w), Math.round(h));
+      // 只设尺寸不定位，窗口会留在上次拖到的位置 —— 底部一出屏就被裁掉，
+      // 设置面板那种高浮层直接少一半，截图根本没法评审。
+      const area = screen.getPrimaryDisplay().workArea;
+      mainWindow.setPosition(
+        Math.max(area.x, Math.round(area.x + (area.width - w) / 2)),
+        Math.max(area.y, Math.round(area.y + (area.height - h) / 2)),
+      );
+    }
   }
 
   buildTray();
   scheduler.arm();
 
-  // 设置里的定时开关变了就重排
-  store.subscribe(() => scheduler.arm());
+  // 设置里的定时开关变了就重排；主题变了要同步系统明暗，DWM 才会跟着换 tint
+  let lastTheme = store.get().theme;
+  store.subscribe(() => {
+    const theme = store.get().theme;
+    if (theme !== lastTheme) {
+      lastTheme = theme;
+      syncNativeTheme();
+    }
+    scheduler.arm();
+  });
 
   nativeTheme.on('updated', () => {
     if (store.get().theme !== 'system') return;
-    if (mainWindow && !mainWindow.isDestroyed()) {
+    // 亚克力下窗口底板是透明的，由系统决定明暗，不能刷实色回去
+    if (mainWindow && !mainWindow.isDestroyed() && !useAcrylic) {
       mainWindow.setBackgroundColor(shellColor());
     }
   });

@@ -4,11 +4,12 @@
  * 原则：颜色、尺寸、时长只在这里定义，组件里不写死数值。
  * 换肤 / 改密度 / 做紧凑模式都只需要动这一个文件。
  *
- * 3.1 调整（依据 docs/design-glass.md）：
- * 1. 配色收敛到「蓝灰主色 + 淡紫强调色」，其余全部走灰阶；
- * 2. 分类色降饱和到 30%~40%，保留色相但不再像交通标志；
- * 3. 玻璃不透明度提到 68%~88%，既通透又能压住文字；
- * 4. 圆角固定四档 10/12/16/20，杜绝 9px、11px、13px 这种零碎值。
+ * 3.2 调整（依据 docs/design-glass.md）：
+ * 1. 只留两个颜色：雾蓝灰 #8A9BAE（主）、淡灰紫 #B0A8C9（强调），其余全灰阶；
+ * 2. 分类色压到 10% 以下饱和度，图标只靠极淡的明度差区分；
+ * 3. 玻璃白度 10%~14%，即 86%~90% 透光；文字靠 --text-lift 提，不靠刷白面板；
+ * 4. 圆角全局一档 12px，按钮/输入框/卡片不再各写各的；
+ * 5. 去掉所有装饰性渐变、彩色状态标签与鲜艳色。
  */
 
 :root {
@@ -25,52 +26,55 @@
   --ink-4: #a5acb9;
 
   /* ---------- 玻璃 ----------
-     68 / 78 / 88 三档：卡片、控件、浮层。
-     低于 65% 文字开始透背景，高于 90% 就不像玻璃了。 */
-  --glass-1: rgba(255, 255, 255, 0.68);
-  --glass-2: rgba(255, 255, 255, 0.78);
-  --glass-3: rgba(255, 255, 255, 0.88);
-  /* 1px 高光描边：细、淡，只在转折处闪一下 */
-  --glass-stroke: rgba(255, 255, 255, 0.62);
-  /* 顶部发丝线，比描边更亮，专门做"厚度" */
-  --glass-hair: rgba(255, 255, 255, 0.2);
+     白度只有一档：10% ~ 14%，即透光度 86%~90%。
+     这是"轻薄玻璃浮在桌面上"的代价 —— 玻璃越透，灰字越容易被背后的明暗吃掉，
+     所以文字必须靠 --text-lift（一道贴字的淡影）提起来，而不是靠把面板刷白。
+     早先的 68/78/88 三档是"磨砂塑料"的做法，整块均匀叠白，通透感全无。 */
+  --glass-1: rgba(255, 255, 255, 0.1);
+  --glass-2: rgba(255, 255, 255, 0.14);
+  --glass-3: rgba(255, 255, 255, 0.18);
+  /* 1px 极细高光描边：白色 15%，只在转折处闪一下，不抢戏 */
+  --glass-stroke: rgba(255, 255, 255, 0.15);
+  /* 雾度：应用唯一能自己控制的那层白。acrylic 的 tint 由系统绘制，
+     压不过桌面原本的颜色，所以窗口放在绿色壁纸上会发绿 —— 这一档就是用来按回来的。
+     调高=色温稳，调低=更透。设置里的「玻璃雾度」滑块改这个值。 */
+  --mist: 14;
+  /* 顶部发丝线，比描边亮一档，专门做"厚度" */
+  --glass-hair: rgba(255, 255, 255, 0.28);
   /* 顶部叠加白光，模拟玻璃上表面的反光 */
-  --glass-inner: rgba(255, 255, 255, 0.52);
+  --glass-inner: rgba(255, 255, 255, 0.3);
   /* 分隔线 / 极淡的填充 */
-  --glass-edge: rgba(120, 134, 165, 0.14);
+  --glass-edge: rgba(120, 134, 165, 0.12);
 
-  /* 阴影统一带蓝调，纯黑阴影在浅底上会发灰 */
-  --shadow-1: 0 1px 2px rgba(58, 72, 100, 0.04), 0 10px 26px rgba(58, 72, 100, 0.06);
-  --shadow-2: 0 2px 6px rgba(58, 72, 100, 0.06), 0 20px 48px rgba(58, 72, 100, 0.12);
-  --shadow-3: 0 6px 16px rgba(52, 64, 92, 0.1), 0 34px 76px rgba(52, 64, 92, 0.18);
+  /* 阴影统一带蓝调，纯黑阴影在浅底上会发灰；玻璃是"浮"的，影子必须极淡 */
+  --shadow-1: 0 1px 2px rgba(58, 72, 100, 0.03), 0 6px 18px rgba(58, 72, 100, 0.05);
+  --shadow-2: 0 1px 4px rgba(58, 72, 100, 0.04), 0 12px 30px rgba(58, 72, 100, 0.07);
+  --shadow-3: 0 2px 8px rgba(52, 64, 92, 0.05), 0 20px 48px rgba(52, 64, 92, 0.1);
 
-  /* ---------- 主色（只两个：蓝灰 + 淡紫） ---------- */
-  --accent: #6f7fa2;
-  --accent-strong: #56668c;
-  --accent-soft: rgba(111, 127, 162, 0.12);
-  --accent-ring: rgba(111, 127, 162, 0.3);
-  /* 强调色只允许出现在「需要被看见一次」的地方 */
-  --lilac: #9a92c4;
-  --lilac-soft: rgba(154, 146, 196, 0.13);
+  /* ---------- 主色（全局只两个：雾蓝灰 + 淡灰紫） ----------
+     其余全是中性灰。强调色只允许出现在「需要被看见一次」的地方。 */
+  --accent: #8a9bae;
+  --accent-strong: #6e7f94;
+  --accent-soft: rgba(138, 155, 174, 0.12);
+  --accent-ring: rgba(138, 155, 174, 0.3);
+  --lilac: #b0a8c9;
+  --lilac-soft: rgba(176, 168, 201, 0.13);
 
-  /* ---------- 分类色（语义色，不是装饰色） ----------
-     色相按需求固定（图片黄 / 视频蓝 / 文档红 / 音频绿 / 压缩灰 / 代码紫 / 程序青），
-     彩度统一收到 30%~40%、明度压低，像褪色的印刷色：
-     20px 图标上仍能分辨，但不会把界面拉花。 */
-  --tone-amber: #ab8a52;
-  --tone-amber-bg: rgba(171, 138, 82, 0.13);
-  --tone-blue: #5b7794;
-  --tone-blue-bg: rgba(91, 119, 148, 0.13);
-  --tone-rose: #a97070;
-  --tone-rose-bg: rgba(169, 112, 112, 0.12);
-  --tone-sage: #6b8a75;
-  --tone-sage-bg: rgba(107, 138, 117, 0.13);
-  --tone-slate: #757c88;
-  --tone-slate-bg: rgba(117, 124, 136, 0.12);
-  --tone-violet: #7c74a0;
-  --tone-violet-bg: rgba(124, 116, 160, 0.13);
-  --tone-teal: #5a8a86;
-  --tone-teal-bg: rgba(90, 138, 134, 0.13);
+  /* ---------- 分类色（全部灰色系，只靠极淡色差区分） ----------
+     图片=浅灰蓝、视频=浅灰紫、文档=浅灰青、其余=中性灰。
+     饱和度压到 10% 以下、明度贴近中性灰：图标在列表里仍能分辨归属，
+     但退远看整体是"一片灰"，不会把界面拉花。原先七种褪色印刷色全部撤掉。 */
+  --tone-blue: #8a9bae;
+  --tone-blue-bg: rgba(138, 155, 174, 0.1);
+  --tone-violet: #b0a8c9;
+  --tone-violet-bg: rgba(176, 168, 201, 0.11);
+  --tone-teal: #93a8a8;
+  --tone-teal-bg: rgba(147, 168, 168, 0.1);
+  --tone-slate: #7c828c;
+  --tone-slate-bg: rgba(124, 130, 140, 0.1);
+  /* 极淡灰，只给轮盘的"其他"用：它和"音频"同为中性灰，需要一档明度差才分得开 */
+  --tone-mist: #9aa0aa;
+  --tone-mist-bg: rgba(154, 160, 170, 0.09);
 
   /* ---------- 尺寸 ---------- */
   --titlebar-h: 46px;
@@ -80,13 +84,15 @@
   --row-h: 56px;
   /* 网格卡片高度：虚拟滚动按它计算行距，改这里 JS 会自动跟随 */
   --card-h: 196px;
-  /* 只四档圆角，不许再出现零碎值 */
-  --radius-s: 10px;
+  /* 圆角全局一档：12px。原先 10/12/16/20 四档并存，同一屏能出现三种圆角，
+     视觉上立刻显乱。开关滑块那种"必须全圆"的才用 --radius-pill。 */
+  --radius-s: 12px;
   --radius-m: 12px;
-  --radius-l: 16px;
-  --radius-xl: 20px;
+  --radius-l: 12px;
+  --radius-xl: 12px;
   --radius-pill: 999px;
-  --gutter: 0px;
+  /* 网格卡片间距：通透的玻璃最怕挤，一拥挤就像贴纸而不是浮起的玻璃 */
+  --gutter: 10px;
 
   /* ---------- 动效 ----------
      150 微反馈 / 190 常态 / 260 入场 / 320 模式切换。
@@ -114,17 +120,19 @@
   --ink-3: #89909f;
   --ink-4: #6a7080;
 
-  --glass-1: rgba(48, 51, 64, 0.66);
-  --glass-2: rgba(54, 57, 71, 0.76);
-  --glass-3: rgba(58, 61, 76, 0.88);
-  --glass-stroke: rgba(255, 255, 255, 0.09);
-  --glass-hair: rgba(255, 255, 255, 0.06);
-  --glass-inner: rgba(255, 255, 255, 0.1);
-  --glass-edge: rgba(255, 255, 255, 0.07);
+  /* 深色玻璃同样压到 10%~14% 白。深色下 acrylic 的 tint 本身就偏暗，
+     再叠一层灰蓝只是把桌面糊住；让 tint 去负责暗，白度只负责"这是一块玻璃"。 */
+  --glass-1: rgba(255, 255, 255, 0.1);
+  --glass-2: rgba(255, 255, 255, 0.13);
+  --glass-3: rgba(255, 255, 255, 0.17);
+  --glass-stroke: rgba(255, 255, 255, 0.16);
+  --glass-hair: rgba(255, 255, 255, 0.22);
+  --glass-inner: rgba(255, 255, 255, 0.14);
+  --glass-edge: rgba(255, 255, 255, 0.09);
 
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.42), 0 12px 28px rgba(0, 0, 0, 0.34);
-  --shadow-2: 0 2px 8px rgba(0, 0, 0, 0.46), 0 24px 52px rgba(0, 0, 0, 0.44);
-  --shadow-3: 0 8px 20px rgba(0, 0, 0, 0.5), 0 38px 84px rgba(0, 0, 0, 0.56);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 22px rgba(0, 0, 0, 0.24);
+  --shadow-2: 0 2px 6px rgba(0, 0, 0, 0.32), 0 14px 34px rgba(0, 0, 0, 0.3);
+  --shadow-3: 0 4px 12px rgba(0, 0, 0, 0.34), 0 22px 52px rgba(0, 0, 0, 0.4);
 
   --accent: #8b9ac4;
   --accent-strong: #a6b3d8;
@@ -133,21 +141,65 @@
   --lilac: #a9a2cf;
   --lilac-soft: rgba(169, 162, 207, 0.15);
 
-  /* 深色下反向处理：提明度保对比，彩度同样收敛，避免在深底上炸眼 */
-  --tone-amber: #cfae7c;
-  --tone-amber-bg: rgba(207, 174, 124, 0.15);
-  --tone-blue: #93aec9;
-  --tone-blue-bg: rgba(147, 174, 201, 0.15);
-  --tone-rose: #cf9c9c;
-  --tone-rose-bg: rgba(207, 156, 156, 0.15);
-  --tone-sage: #9dbca8;
-  --tone-sage-bg: rgba(157, 188, 168, 0.15);
-  --tone-slate: #a3aab8;
-  --tone-slate-bg: rgba(163, 170, 184, 0.14);
-  --tone-violet: #b1a8d3;
-  --tone-violet-bg: rgba(177, 168, 211, 0.15);
-  --tone-teal: #8fbdb8;
-  --tone-teal-bg: rgba(143, 189, 184, 0.15);
+  /* 深色下提明度保对比，彩度同样收敛。仍是同一组灰调，只是整体上移一档 */
+  --tone-blue: #a3b4c6;
+  --tone-blue-bg: rgba(163, 180, 198, 0.14);
+  --tone-violet: #c2bad6;
+  --tone-violet-bg: rgba(194, 186, 214, 0.14);
+  --tone-teal: #a6bcbc;
+  --tone-teal-bg: rgba(166, 188, 188, 0.13);
+  --tone-slate: #b2b8c2;
+  --tone-slate-bg: rgba(178, 184, 194, 0.13);
+  --tone-mist: #c3c8d0;
+  --tone-mist-bg: rgba(195, 200, 208, 0.12);
+}
+
+/* ---------------------------- 亚克力材质档位 ----------------------------
+   启用 Windows 11 DWM 亚克力后，窗口底板是全透明的：桌面的模糊由系统在窗口
+   背后绘制。整块界面上只该有「薄膜」，绝不能有第二层模糊。
+
+   所以这一档把玻璃的三级白度整体压掉一个数量级（68/78/88% → 4/10/18%）：
+   系统已经给了约八成白，我们再叠同量级的白就只剩一片奶。层次改由边光强度、
+   内阴影和极轻的色相偏移来塑造 —— 这也更接近真玻璃叠放的物理。
+
+   另加一组 --read-sheet：真玻璃上看不清 12px 灰字，需要"读区"垫半实底。 */
+:root[data-material='acrylic'] {
+  --glass-1: rgba(255, 255, 255, 0.045);
+  --glass-2: rgba(255, 255, 255, 0.1);
+  --glass-3: rgba(255, 255, 255, 0.18);
+  --glass-stroke: rgba(255, 255, 255, 0.72);
+  --glass-hair: rgba(255, 255, 255, 0.44);
+  --glass-inner: rgba(255, 255, 255, 0.26);
+  --glass-edge: rgba(255, 255, 255, 0.24);
+
+  /* 文字压在透光底上，要比实底时更深才立得住 */
+  --ink-1: #171b24;
+  --ink-2: #3a4354;
+  --ink-3: #5c6678;
+  --ink-4: #7f899b;
+
+  --read-sheet: rgba(255, 255, 255, 0.54);
+  --read-sheet-strong: rgba(255, 255, 255, 0.74);
+}
+
+:root[data-material='acrylic'][data-theme='dark'] {
+  --glass-1: rgba(255, 255, 255, 0.035);
+  --glass-2: rgba(255, 255, 255, 0.08);
+  --glass-3: rgba(255, 255, 255, 0.14);
+  --glass-stroke: rgba(255, 255, 255, 0.16);
+  --glass-hair: rgba(255, 255, 255, 0.1);
+  --glass-inner: rgba(255, 255, 255, 0.075);
+  --glass-edge: rgba(255, 255, 255, 0.11);
+
+  --ink-1: #f2f4fa;
+  --ink-2: #cbd2de;
+  /* 深色 acrylic 的 tint 是偏亮的蓝灰，不是墨黑。次级文字若照实底主题那样压暗，
+     透上来的桌面一亮就把它吃掉；这里整体提一档，透明度一点不用让步。 */
+  --ink-3: #b4bdcc;
+  --ink-4: #949dad;
+
+  --read-sheet: rgba(18, 20, 27, 0.46);
+  --read-sheet-strong: rgba(18, 20, 27, 0.66);
 }
 
 * {
@@ -159,6 +211,12 @@ body {
   height: 100%;
   margin: 0;
   overflow: hidden;
+}
+
+/* 亚克力档位下窗口底板必须全透——这层但凡有一点实色，系统的模糊就被盖死了 */
+:root[data-material='acrylic'],
+:root[data-material='acrylic'] body {
+  background: transparent;
 }
 
 body {
@@ -218,10 +276,12 @@ textarea {
 }
 
 /* 主题切换时只给颜色加过渡，别让整页重绘 */
+/* 切主题时的交叉淡变。时长要和主进程 DWM 重采样 acrylic tint 的时间对齐
+   （实测 300~500ms），否则应用主题已经换完、玻璃还没换，会露一瞬的马脚。 */
 html.theme-anim,
 html.theme-anim * {
-  transition: background-color 260ms var(--ease), border-color 260ms var(--ease),
-    color 260ms var(--ease), box-shadow 260ms var(--ease);
+  transition: background-color 440ms var(--ease), border-color 440ms var(--ease),
+    color 440ms var(--ease), box-shadow 440ms var(--ease);
 }
 
 /* ---------- 无障碍 / 省电 ---------- */

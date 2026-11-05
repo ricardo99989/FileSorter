@@ -1,0 +1,51 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+html,body{margin:0;height:100%;overflow:hidden}
+/*
+ * 冒烟截图用的合成桌面。只服务文档截图，不进正式界面。
+ *
+ * 两条约束：
+ * 1. 底下必须有明暗起伏 —— 纯色底上的 acrylic 只是一块灰布，看不出是玻璃。
+ * 2. 只用雾蓝灰 / 淡灰紫 + 中性灰 —— 早期那版蓝天草地本身太艳，透过亚克力
+ *    会把整张截图染成彩色，和「全局两种颜色」的规范自相矛盾，深色档更会被
+ *    大亮天透成灰蓝一团，根本看不出是深色模式。
+ *
+ * 于是用三块半透明「窗口」+ 一团柔光 + 一条地平暗带来制造层次，
+ * 既能证明桌面是真的透上来了，又不抢应用自己的配色。
+ */
+body.night .sky{background:linear-gradient(180deg,#0d111a 0%,#151b26 46%,#0a0e15 100%)}
+body.night .sun{background:radial-gradient(circle,rgba(176,168,201,.22) 0%,rgba(138,155,174,.10) 42%,rgba(138,155,174,0) 72%);opacity:.8}
+body.night .cloud{background:rgba(255,255,255,.035);border-color:rgba(255,255,255,.07);box-shadow:0 18px 50px rgba(0,0,0,.28)}
+body.night .hill{background:linear-gradient(180deg,rgba(0,0,0,0) 0%,rgba(0,0,0,.36) 100%)}
+body.night .grid{opacity:.12}
+body.night .bar{background:rgba(255,255,255,.045);color:#909bad}
+body.night .bar i{background:#4a5570}
+body.night .bar span{background:rgba(255,255,255,.05)}
+.sky{position:absolute;inset:0;background:linear-gradient(180deg,#e7ebf2 0%,#dfe5ee 48%,#c8d1dd 100%)}
+.sun{position:absolute;left:18%;top:8%;width:420px;height:420px;border-radius:50%;
+  background:radial-gradient(circle,rgba(255,255,255,.95) 0%,rgba(255,255,255,.4) 42%,rgba(255,255,255,0) 72%);opacity:.8}
+.cloud{position:absolute;border-radius:14px;background:rgba(255,255,255,.4);
+  border:1px solid rgba(255,255,255,.58);box-shadow:0 18px 50px rgba(88,102,128,.1)}
+.c1{left:6%;top:18%;width:250px;height:160px}
+.c2{left:56%;top:9%;width:200px;height:120px}
+.c3{left:68%;top:31%;width:300px;height:180px}
+.hill{position:absolute;left:0;right:0;bottom:0;height:34%;
+  background:linear-gradient(180deg,rgba(120,134,158,.06) 0%,rgba(96,110,136,.2) 100%)}
+.grid{position:absolute;left:0;right:0;bottom:0;height:34%;opacity:.5;
+  background:repeating-linear-gradient(90deg,rgba(255,255,255,.16) 0 2px,transparent 2px 64px),
+             repeating-linear-gradient(0deg,rgba(255,255,255,.16) 0 2px,transparent 2px 46px)}
+.bar{position:absolute;left:0;right:0;top:0;height:44px;background:rgba(255,255,255,.42);
+  display:flex;align-items:center;gap:10px;padding:0 16px;font:500 14px "Segoe UI";color:#4b5568}
+.bar i{width:16px;height:16px;border-radius:4px;background:#8a9bae;display:block}
+.bar span{background:rgba(255,255,255,.5);border-radius:6px;padding:3px 10px;font-size:12px}
+</style></head><body>
+<script>
+  // 主进程 loadFile 时带 ?theme=dark，这里只负责换类名
+  if (new URLSearchParams(location.search).get('theme') === 'dark') {
+    document.body.className = 'night';
+  }
+</script>
+<div class="sky"></div><div class="sun"></div>
+<div class="cloud c1"></div><div class="cloud c2"></div><div class="cloud c3"></div>
+<div class="hill"></div><div class="grid"></div>
+<div class="bar"><i></i><span>文件</span><span>编辑</span><span>视图</span><span>工具</span><span>帮助</span></div>
+</body></html>

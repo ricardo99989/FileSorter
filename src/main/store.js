@@ -10,7 +10,7 @@ const path = require('node:path');
  * 保证 settings.json 可以人工编辑、可以跨版本迁移。
  */
 const DEFAULT_SETTINGS = Object.freeze({
-  version: 3,
+  version: 4,
 
   /* ---------------- 整理 ---------------- */
   /** 分类 id → 用户自定义文件夹名 */
@@ -40,6 +40,12 @@ const DEFAULT_SETTINGS = Object.freeze({
   lang: 'zh',
   /** 鼠标光影跟随 */
   cursorGlow: true,
+  /**
+   * 玻璃雾度（0~30，百分比）。
+   * acrylic 的 tint 由系统绘制，压不过桌面原本的颜色 —— 窗口直接放在绿色壁纸上就会发绿。
+   * 这一档是应用自己能控制的那部分：调高=色温稳（雾蓝灰），调低=更透（跟着桌面变色）。
+   */
+  mist: 14,
 
   /* ---------------- 窗口 ---------------- */
   /** 显示模式：window 窗口 / sidebar 侧边栏 / dock 任务栏悬浮 */
@@ -233,6 +239,7 @@ function createStore(baseDir) {
     if (typeof raw.watchEnabled === 'boolean') next.watchEnabled = raw.watchEnabled;
     if (typeof raw.trayHintShown === 'boolean') next.trayHintShown = raw.trayHintShown;
 
+    next.mist = Math.round(num(raw.mist, DEFAULT_SETTINGS.mist, 0, 30));
     next.sidebarWidth = Math.round(num(raw.sidebarWidth, DEFAULT_SETTINGS.sidebarWidth, 320, 720));
     next.dupesMinSize = Math.round(num(raw.dupesMinSize, DEFAULT_SETTINGS.dupesMinSize, 0, 1024 * 1024));
 

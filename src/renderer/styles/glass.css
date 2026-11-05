@@ -9,6 +9,15 @@
 
 /* ------------------------------ 背景 ------------------------------ */
 
+/* 滤镜定义的容器：占 0 尺寸但不display:none —— display:none 会让里面的 filter 失效 */
+.fx-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
 /**
  * 玻璃要成立，背后必须有明暗起伏——铺在纯色底上的 blur 只是一块脏布。
  * 所以这里只做两团大半径渐变：左上一团偏蓝灰的高光，右下一团偏淡紫的阴影。
@@ -45,6 +54,211 @@
 :root[data-theme='dark'] .app-bg::after {
   opacity: 0.14;
   mix-blend-mode: soft-light;
+}
+
+/* ---------------------------- 亚克力档位 ----------------------------
+   这一档的物理前提变了：桌面由 DWM 在窗口背后模糊，页面底板全透明。
+
+   于是两件事必须同时翻转：
+   1. 所有 backdrop-filter 归零。它们只能糊到应用自己画的东西，看不到桌面，
+      纯粹是"每个面板多一遍 GPU 采样"的重复劳动 —— 而且会把屏幕上的薄膜搅浑。
+   2. .app-bg 那层实色 linear-gradient 必须去掉，只留两团很淡的色相，
+      用来把系统给的偏暖白 tint 压回冷调。留着实色等于把桌面糊死。 */
+:root[data-material='acrylic'] *,
+:root[data-material='acrylic'] *::before,
+:root[data-material='acrylic'] *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+:root[data-material='acrylic'] .app-bg {
+  background:
+    radial-gradient(78% 62% at 12% -6%, rgba(168, 188, 228, 0.3), transparent 62%),
+    radial-gradient(72% 58% at 94% 96%, rgba(184, 178, 224, 0.24), transparent 60%),
+    /* 雾底用冷白不用纯白：同样的 alpha，纯白只是"更奶"，
+       冷白才把透出来的绿/暖按回雾蓝灰。alpha 走 --mist，设置里可调。 */
+    linear-gradient(
+      180deg,
+      rgba(233, 238, 247, calc(var(--mist) / 100)),
+      rgba(228, 235, 245, calc(var(--mist) / 100))
+    );
+}
+
+:root[data-material='acrylic'] .app-bg::after {
+  opacity: 0.1;
+}
+
+:root[data-material='acrylic'][data-theme='dark'] .app-bg {
+  background:
+    radial-gradient(70% 58% at 10% -8%, rgba(92, 108, 152, 0.28), transparent 62%),
+    radial-gradient(66% 54% at 96% 98%, rgba(116, 102, 154, 0.22), transparent 60%),
+    linear-gradient(
+      180deg,
+      rgba(233, 238, 247, calc(var(--mist) / 130)),
+      rgba(228, 235, 245, calc(var(--mist) / 130))
+    );
+}
+
+:root[data-material='acrylic'][data-theme='dark'] .app-bg::after {
+  opacity: 0.06;
+}
+
+/**
+ * 分层：同一档材质下，「越需要读字的地方越实」
+ *
+ * 通透是手段不是目的。侧栏只有导航词、标题栏只有一行字，可以极透；
+ * 文件列表要认文件名、详情栏要读正文，就必须压住背后的亮部。
+ * 全界面一个透明度 = 既不够通透，又不够清楚。
+ */
+:root[data-material='acrylic'] .sidebar {
+  background: rgba(255, 255, 255, 0.05);
+}
+:root[data-material='acrylic'] .main {
+  background: rgba(255, 255, 255, 0.08);
+}
+:root[data-material='acrylic'] .details {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+:root[data-material='acrylic'][data-theme='dark'] .sidebar {
+  background: rgba(255, 255, 255, 0.03);
+}
+:root[data-material='acrylic'][data-theme='dark'] .main {
+  background: rgba(255, 255, 255, 0.05);
+}
+:root[data-material='acrylic'][data-theme='dark'] .details {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+/* 任务栏悬浮挂件：异形小窗，最该有"一片玻璃贴在桌沿"的感觉。
+   三块统一再降一档，描边也跟着淡掉 —— 小窗上 15% 的白边已经能看清，
+   再浓就像描了个边。 */
+:root[data-material='acrylic'][data-mode='dock'] .sidebar,
+:root[data-material='acrylic'][data-mode='dock'] .main,
+:root[data-material='acrylic'][data-mode='dock'] .details,
+:root[data-material='acrylic'][data-mode='dock'] .titlebar,
+:root[data-material='acrylic'][data-mode='dock'] .toolbar,
+:root[data-material='acrylic'][data-mode='dock'] .statusbar {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+:root[data-material='acrylic'][data-mode='dock'][data-theme='dark'] .sidebar,
+:root[data-material='acrylic'][data-mode='dock'][data-theme='dark'] .main,
+:root[data-material='acrylic'][data-mode='dock'][data-theme='dark'] .details,
+:root[data-material='acrylic'][data-mode='dock'][data-theme='dark'] .titlebar,
+:root[data-material='acrylic'][data-mode='dock'][data-theme='dark'] .toolbar,
+:root[data-material='acrylic'][data-mode='dock'][data-theme='dark'] .statusbar {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+:root[data-material='acrylic'][data-mode='dock'] .glass {
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 1px 2px rgba(40, 52, 76, 0.03), 0 4px 14px rgba(40, 52, 76, 0.05);
+}
+
+:root[data-material='acrylic'][data-mode='dock'][data-theme='dark'] .glass {
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 6px 18px rgba(0, 0, 0, 0.26);
+}
+
+/**
+ * 液态玻璃 = 缘 + 面，两件事分开做
+ *
+ * 早先的做法是把"上表面反射"画成 ::before 的一道渐变、把边缘高光塞进 box-shadow。
+ * 问题是渐变和描边都长一个样，面板看上去是一张半透明贴纸，没有"厚度"。
+ *
+ * 真玻璃立在桌面上，被左上方来的光打中时，光分成两路：
+ *   缘 —— 打在玻璃斜边上的那一条。上缘最亮（正面迎光），左缘次之，
+ *         右缘和下缘反过来是被本体挡住的投影。这一路要锐，1.5px  enough。
+ *   面 —— 穿过玻璃在里层衰减。靠近上表面的地方亮，越往下越暗，
+ *         底缘再压一道极淡的暗，光就像真的在介质里走了一段。
+ *
+ * 所以 ::before 专管缘（四条 inset，各管一边），::after 专管面（一条纵向渐变）。
+ * 两者都是 inherit 圆角的绝对定位层，pointer-events 早在基类里关掉了。
+ */
+:root[data-material='acrylic'] .glass {
+  /* 外投影只留"浮起来"的那层，而且必须极淡：玻璃是贴在桌面上的薄膜，
+     影子一重就变塑料板。边缘的光一律交给 ::before，别混在 box-shadow 里。 */
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow:
+    0 1px 2px rgba(40, 52, 76, 0.03),
+    0 4px 12px rgba(40, 52, 76, 0.04),
+    0 14px 34px rgba(40, 52, 76, 0.07);
+}
+
+:root[data-material='acrylic'] .glass::before {
+  background: none;
+  opacity: 1;
+  /* 缘光比 3.1 收淡一档：上缘仍是迎光面所以最亮，但 0.9 的白在通透玻璃上
+     像贴了一圈荧光笔。左右下缘只保留"被本体挡住"的那点暗，暗示厚度。 */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 1px 0 0 rgba(255, 255, 255, 0.24),
+    inset -1px 0 0 rgba(46, 60, 88, 0.05),
+    inset 0 -1px 0 rgba(46, 60, 88, 0.09);
+}
+
+:root[data-material='acrylic'] .glass::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.12),
+    rgba(255, 255, 255, 0.02) 26%,
+    transparent 56%,
+    rgba(46, 60, 88, 0.04)
+  );
+}
+
+:root[data-material='acrylic'][data-theme='dark'] .glass {
+  border-color: rgba(255, 255, 255, 0.13);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.2),
+    0 8px 22px rgba(0, 0, 0, 0.26);
+}
+
+/* 深色下亮边要收着：玻璃背后是暗的，缘太亮会像贴了一圈荧光笔 */
+:root[data-material='acrylic'][data-theme='dark'] .glass::before {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 1px 0 0 rgba(255, 255, 255, 0.1),
+    inset -1px 0 0 rgba(0, 0, 0, 0.24),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.32);
+}
+
+:root[data-material='acrylic'][data-theme='dark'] .glass::after {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.06),
+    rgba(255, 255, 255, 0.012) 24%,
+    transparent 54%,
+    rgba(0, 0, 0, 0.16)
+  );
+}
+
+/**
+ * 文字托底
+ * 玻璃越透，灰字越容易被背后的明暗吃掉。浅色下压一道极淡白影把字"提"起来，
+ * 深色下换成黑影。继承给所有子元素，不必逐类写。
+ *
+ * 辅助文字单独加深一档： acrylic 档的面板只有 10% 白，--ink-3 原值 #7a8291
+ * 压在透出来的深色窗口上会犯糊。这里不动非 acrylic 档，那条路径面板本身够实。
+ * text-shadow 只写 1px 偏移、不加 blur 半径 —— 模糊阴影每个字符都要多渲一遍，
+ * 虚拟滚动的长列表里会直接掉帧。
+ */
+:root[data-material='acrylic'] {
+  --text-lift: 0 1px 1px rgba(255, 255, 255, 0.5);
+  --ink-3: #5f6675;
+  --ink-4: #7e8593;
+}
+:root[data-material='acrylic'][data-theme='dark'] {
+  --text-lift: 0 1px 2px rgba(0, 0, 0, 0.55);
+}
+:root[data-material='acrylic'] body {
+  text-shadow: var(--text-lift);
 }
 
 /* 鼠标光影跟随：一层径向渐变，位置由 JS 写 CSS 变量，只改 opacity/transform */
@@ -100,11 +314,12 @@
   box-shadow: var(--shadow-1),
     inset 0 1px 0 var(--glass-hair),
     inset 0 -1px 0 rgba(120, 134, 165, 0.05);
-  backdrop-filter: blur(26px) saturate(175%);
-  -webkit-backdrop-filter: blur(26px) saturate(175%);
+  backdrop-filter: blur(30px) saturate(175%);
+  -webkit-backdrop-filter: blur(30px) saturate(175%);
 }
 
-/* 顶部内高光：玻璃"厚"的来源 */
+/* 顶部内高光：玻璃"厚"的来源。通透档位下压到 0.5 ——
+   原 0.85 在 10% 白的玻璃上会糊成一层灰雾，反而看不出背后的桌面。 */
 .glass::before {
   content: '';
   position: absolute;
@@ -112,7 +327,7 @@
   border-radius: inherit;
   background: linear-gradient(180deg, var(--glass-inner), transparent 38%);
   pointer-events: none;
-  opacity: 0.85;
+  opacity: 0.5;
 }
 
 .glass--flat {
@@ -123,6 +338,52 @@
 :root[data-theme='dark'] .glass::before {
   opacity: 1;
   background: linear-gradient(180deg, var(--glass-inner), transparent 28%);
+}
+
+/* ------------------------------ 折射 ------------------------------ */
+
+/**
+ * 浮动层是「读区」，不能和主界面一样透。
+ *
+ * --read-sheet 在 tokens.css 里定义好却一直没被引用：结果设置弹窗只有 18% 白，
+ * 后面的文件列表整排透上来，两行字叠在一起，12px 的说明文字完全读不出来。
+ * 抽屉 / 菜单 / toast 用半实底，文字最密的 modal 再实一档。
+ * 这是"越需要读字的地方越实"这条分层的最后一层，不破坏主界面的通透。
+ */
+:root[data-material='acrylic'] .drawer,
+:root[data-material='acrylic'] .menu,
+:root[data-material='acrylic'] .toast {
+  background: var(--read-sheet);
+}
+:root[data-material='acrylic'] .modal {
+  background: var(--read-sheet-strong);
+}
+
+/**
+ * 浮动层挂真折射。
+ *
+ * acrylic 档位把全局 backdrop-filter 归零了（它们糊不到桌面，白费 GPU），
+ * 但浮动层是例外：抽屉/菜单/toast 下面压着文件卡片这类**页面自己的内容**，
+ * backdrop 采得到，位移就折得动。这是整套里唯一"光真的拐了弯"的地方。
+ *
+ * 先 blur 再位移：只位移不模糊的话，折过去的内容是锐的，一看就是滤镜；
+ * 先糊一层再折，才像隔着有一定厚度的介质看东西。
+ */
+:root[data-material='acrylic'] .drawer,
+:root[data-material='acrylic'] .modal,
+:root[data-material='acrylic'] .menu,
+:root[data-material='acrylic'] .toast {
+  backdrop-filter: blur(18px) saturate(150%) url('#liquidRefract') !important;
+  -webkit-backdrop-filter: blur(18px) saturate(150%) url('#liquidRefract') !important;
+}
+
+/* 深色下 blur 收一点：背后本来就暗，糊多了只剩一团黑 */
+:root[data-material='acrylic'][data-theme='dark'] .drawer,
+:root[data-material='acrylic'][data-theme='dark'] .modal,
+:root[data-material='acrylic'][data-theme='dark'] .menu,
+:root[data-material='acrylic'][data-theme='dark'] .toast {
+  backdrop-filter: blur(14px) saturate(140%) url('#liquidRefract') !important;
+  -webkit-backdrop-filter: blur(14px) saturate(140%) url('#liquidRefract') !important;
 }
 
 /* ------------------------------ 按钮 ------------------------------ */
@@ -163,13 +424,14 @@
 /* 主按钮：蓝灰 → 淡紫的极轻渐变，强调色只用这一次 */
 .btn--primary {
   color: #fff;
-  background: linear-gradient(135deg, var(--accent) 0%, var(--lilac) 145%);
+  background: var(--accent);
   border-color: transparent;
-  box-shadow: 0 2px 10px rgba(86, 102, 140, 0.26), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  box-shadow: 0 1px 4px rgba(86, 102, 140, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 .btn--primary:hover {
-  box-shadow: 0 6px 20px rgba(86, 102, 140, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.26);
+  background: var(--accent-strong);
+  box-shadow: 0 3px 12px rgba(86, 102, 140, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
 .btn--ghost {
@@ -183,8 +445,8 @@
 }
 
 .btn--danger {
-  color: var(--tone-rose);
-  background: var(--tone-rose-bg);
+  color: var(--ink-1);
+  background: rgba(120, 134, 165, 0.16);
   border-color: transparent;
 }
 
@@ -358,15 +620,17 @@ textarea.input {
   border-color: transparent;
 }
 
+/* 状态色不再另起色相：需要"被看见"的用深一档雾蓝灰，其余用浅一档。
+   原先玫红/鼠尾草一对是界面里仅剩的彩色，撤掉后整体才真正只剩两个主色。 */
 .chip--rose {
-  color: var(--tone-rose);
-  background: var(--tone-rose-bg);
+  color: var(--accent-strong);
+  background: var(--accent-soft);
   border-color: transparent;
 }
 
 .chip--sage {
-  color: var(--tone-sage);
-  background: var(--tone-sage-bg);
+  color: var(--accent);
+  background: var(--accent-soft);
   border-color: transparent;
 }
 
@@ -381,11 +645,13 @@ textarea.input {
 
 .tag-dot[data-color='blue'] { background: var(--tone-blue); }
 .tag-dot[data-color='violet'] { background: var(--tone-violet); }
-.tag-dot[data-color='sage'] { background: var(--tone-sage); }
-.tag-dot[data-color='amber'] { background: var(--tone-amber); }
-.tag-dot[data-color='rose'] { background: var(--tone-rose); }
 .tag-dot[data-color='teal'] { background: var(--tone-teal); }
 .tag-dot[data-color='slate'] { background: var(--tone-slate); }
+.tag-dot[data-color='mist'] { background: var(--tone-mist); }
+/* 旧数据里可能还存着已撤掉的色名，统一落到中性灰，别显示成一个空洞 */
+.tag-dot[data-color='sage'],
+.tag-dot[data-color='amber'],
+.tag-dot[data-color='rose'] { background: var(--tone-slate); }
 
 /* ------------------------------ 开关 ------------------------------ */
 
@@ -415,7 +681,7 @@ textarea.input {
 }
 
 .switch.is-on {
-  background: linear-gradient(135deg, var(--accent), var(--lilac));
+  background: var(--accent);
 }
 
 .switch.is-on::after {
@@ -491,12 +757,12 @@ textarea.input {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--tone-sage);
+  background: var(--accent);
   flex: none;
 }
 
 .toast--error .toast__dot {
-  background: var(--tone-rose);
+  background: var(--accent-strong);
 }
 
 .toast__action {
@@ -554,9 +820,10 @@ textarea.input {
   color: var(--ink-1);
 }
 
+/* 危险项靠"比别项重一档"区分，不靠红色：一屏里出现第三种色相就破了极简 */
 .menu__item--danger:hover {
-  background: var(--tone-rose-bg);
-  color: var(--tone-rose);
+  background: rgba(120, 134, 165, 0.18);
+  color: var(--ink-1);
 }
 
 .menu__sep {

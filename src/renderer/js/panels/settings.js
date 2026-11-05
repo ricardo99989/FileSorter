@@ -58,6 +58,21 @@ function switchRow(key, label, hint, checked) {
   </div>`;
 }
 
+function sliderRow(key, label, hint, value, min, max) {
+  return `<div class="setting">
+    <div class="setting__main">
+      <div class="setting__label">${esc(label)}</div>
+      ${hint ? `<div class="setting__hint">${esc(hint)}</div>` : ''}
+    </div>
+    <div class="setting__control">
+      <input class="slider" type="range" min="${min}" max="${max}" step="1"
+             value="${value}" data-slider="${key}"
+             aria-label="${esc(label)}" />
+      <span class="slider__val" data-slider-val="${key}">${value}%</span>
+    </div>
+  </div>`;
+}
+
 function selectHtml(name, options, value, attr = '') {
   return `<select class="input" ${attr}>
     ${options
@@ -151,6 +166,7 @@ function appearanceTab(state) {
     </div>
 
     <div class="section">
+      ${sliderRow('mist', t('settings.mist'), t('settings.mist.hint'), s.mist, 0, 30)}
       ${switchRow('cursorGlow', t('settings.cursorGlow'), t('settings.cursorGlow.hint'), s.cursorGlow)}
       ${switchRow('skipHidden', t('settings.skipHidden'), '', s.skipHidden)}
       ${switchRow('closeToTray', t('settings.closeToTray'), '', s.closeToTray)}

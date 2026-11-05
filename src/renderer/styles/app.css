@@ -487,13 +487,11 @@
 
 /* 分类着色：色相固定（图片黄 / 视频蓝 / 文档红 / 音频绿 / 压缩灰 / 代码紫 / 程序青）
    统一暴露 --chip-bg，网格卡片要把「色块」缩成居中方片时复用同一个值，不必重复写七遍 */
-.file-ico[data-tone='amber'] { --chip-bg: var(--tone-amber-bg); background: var(--chip-bg); color: var(--tone-amber); }
 .file-ico[data-tone='blue'] { --chip-bg: var(--tone-blue-bg); background: var(--chip-bg); color: var(--tone-blue); }
-.file-ico[data-tone='rose'] { --chip-bg: var(--tone-rose-bg); background: var(--chip-bg); color: var(--tone-rose); }
-.file-ico[data-tone='sage'] { --chip-bg: var(--tone-sage-bg); background: var(--chip-bg); color: var(--tone-sage); }
-.file-ico[data-tone='slate'] { --chip-bg: var(--tone-slate-bg); background: var(--chip-bg); color: var(--tone-slate); }
 .file-ico[data-tone='violet'] { --chip-bg: var(--tone-violet-bg); background: var(--chip-bg); color: var(--tone-violet); }
 .file-ico[data-tone='teal'] { --chip-bg: var(--tone-teal-bg); background: var(--chip-bg); color: var(--tone-teal); }
+.file-ico[data-tone='slate'] { --chip-bg: var(--tone-slate-bg); background: var(--chip-bg); color: var(--tone-slate); }
+.file-ico[data-tone='mist'] { --chip-bg: var(--tone-mist-bg); background: var(--chip-bg); color: var(--tone-mist); }
 
 .file-row__text {
   display: flex;
@@ -587,7 +585,7 @@
   display: flex;
   flex-direction: column;
   height: var(--card-h);
-  padding: 14px 14px 12px;
+  padding: 16px 16px 14px;
   border-radius: var(--radius-l);
   background: var(--glass-2);
   border: 1px solid var(--glass-stroke);
@@ -605,9 +603,9 @@
   inset: 0;
   border-radius: inherit;
   background: radial-gradient(
-    140px circle at var(--mx, 50%) var(--my, 0%),
-    rgba(255, 255, 255, 0.85),
-    rgba(255, 255, 255, 0) 68%
+    160px circle at var(--mx, 50%) var(--my, 0%),
+    rgba(255, 255, 255, 0.32),
+    rgba(255, 255, 255, 0) 70%
   );
   opacity: 0;
   transition: opacity var(--t-base) var(--ease);
@@ -626,7 +624,7 @@
   transform: translateY(-2px);
   box-shadow: var(--shadow-2), inset 0 1px 0 var(--glass-hair);
   background: var(--glass-3);
-  border-color: rgba(255, 255, 255, 0.8);
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
 .grid-card:hover::before {
@@ -634,7 +632,7 @@
 }
 
 :root[data-theme='dark'] .grid-card:hover {
-  border-color: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.22);
 }
 
 /* 图标缩放：悬停时把注意力引到那个色片上 */
@@ -647,7 +645,7 @@
   content: '';
   position: absolute;
   inset: -40% -60%;
-  background: linear-gradient(115deg, transparent 42%, rgba(255, 255, 255, 0.34) 50%, transparent 58%);
+  background: linear-gradient(115deg, transparent 44%, rgba(255, 255, 255, 0.2) 50%, transparent 56%);
   transform: translateX(-60%);
   opacity: 0;
   transition: opacity var(--t-base) var(--ease), transform 520ms var(--ease);
@@ -655,7 +653,7 @@
 }
 
 .grid-card:hover::after {
-  opacity: 0.55;
+  opacity: 0.3;
   transform: translateX(60%);
 }
 
@@ -946,7 +944,7 @@
 }
 
 .statusbar__chip--live {
-  color: var(--tone-sage);
+  color: var(--accent);
 }
 
 /* ------------------------------ 详情栏 ------------------------------ */
@@ -1148,7 +1146,7 @@
 }
 
 .tag-chip button:hover {
-  color: var(--tone-rose);
+  color: var(--accent);
 }
 
 .tag-add {
