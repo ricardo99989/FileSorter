@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'" />
+  <title>FileSorter</title>
+  <link rel="stylesheet" href="./styles/tokens.css" />
+  <link rel="stylesheet" href="./styles/glass.css" />
+  <link rel="stylesheet" href="./styles/layout.css" />
+</head>
+<body>
+  <svg class="sprite" aria-hidden="true">
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3" /><circle cx="8.5" cy="9.5" r="1.6" /><path d="M4 17l5-5 3.5 3.5L16 12l4 4" /></symbol>
+    <symbol id="i-video" viewBox="0 0 24 24"><rect x="3" y="5" width="13" height="14" rx="3" /><path d="M16 10.5l4.2-2.6a.7.7 0 011.1.6v6.9a.7.7 0 01-1.1.6L16 13.5" /></symbol>
+    <symbol id="i-doc" viewBox="0 0 24 24"><path d="M6 3.5h7l5 5V20a1.5 1.5 0 01-1.5 1.5h-10A1.5 1.5 0 015 20V5a1.5 1.5 0 011-1.5z" /><path d="M13 3.5V9h5" /><path d="M8.5 13h7M8.5 16.5h4.5" /></symbol>
+    <symbol id="i-audio" viewBox="0 0 24 24"><path d="M9 17V6.5l9-2v10" /><circle cx="6.5" cy="17.5" r="2.6" /><circle cx="15.5" cy="15.5" r="2.6" /></symbol>
+    <symbol id="i-archive" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1.6" /><path d="M4.8 9v9.4A1.6 1.6 0 006.4 20h11.2a1.6 1.6 0 001.6-1.6V9" /><path d="M10 12.5h4" /></symbol>
+    <symbol id="i-app" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3" /><path d="M3 9h18" /><circle cx="6.5" cy="6.5" r=".9" /></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24"><path d="M9 7l-5 5 5 5M15 7l5 5-5 5" /></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3.5h7l5 5V20a1.5 1.5 0 01-1.5 1.5h-10A1.5 1.5 0 015 20V5a1.5 1.5 0 011-1.5z" /><path d="M13 3.5V9h5" /></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7.5A2.5 2.5 0 015.5 5h3.2l2 2.4h7.8A2.5 2.5 0 0121 9.9V18a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5" /><path d="M15.5 15.5L21 21" /></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M4 9h9.5a5.5 5.5 0 010 11H8" /><path d="M4 9l4-4M4 9l4 4" /></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M12 3v2.2M12 18.8V21M3 12h2.2M18.8 12H21M5.6 5.6l1.6 1.6M16.8 16.8l1.6 1.6M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6" /></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></symbol>
+    <symbol id="i-sort" viewBox="0 0 24 24"><path d="M7 6v12M7 18l-3-3M7 18l3-3M17 18V6M17 6l-3 3M17 6l3 3" /></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3.5l1.9 5.1 5.1 1.9-5.1 1.9L12 17.5l-1.9-5.1L5 10.5l5.1-1.9z" /></symbol>
+  </svg>
+
+  <div class="app">
+    <div class="titlebar">
+      <div class="titlebar__brand">
+        <span class="brand-dot"></span>
+        <span class="titlebar__name">FileSorter</span>
+        <span class="titlebar__hint">文件自动整理</span>
+      </div>
+    </div>
+
+    <aside class="sidebar">
+      <button class="folder-card" id="pickFolder" type="button">
+        <span class="folder-card__icon"><svg><use href="#i-folder" /></svg></span>
+        <span class="folder-card__body">
+          <span class="folder-card__label">当前文件夹</span>
+          <span class="folder-card__path" id="folderPath">点击选择文件夹</span>
+        </span>
+      </button>
+
+      <div class="nav" id="categoryNav" role="tablist"></div>
+
+      <div class="sidebar__spacer"></div>
+
+      <div class="nav nav--foot" id="utilityNav">
+        <button class="nav__item" data-view="history" type="button">
+          <svg class="nav__icon"><use href="#i-history" /></svg>
+          <span>整理记录</span>
+        </button>
+        <button class="nav__item" data-view="settings" type="button">
+          <svg class="nav__icon"><use href="#i-settings" /></svg>
+          <span>设置</span>
+        </button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="toolbar">
+        <div class="searchbox">
+          <svg class="searchbox__icon"><use href="#i-search" /></svg>
+          <input id="searchInput" type="search" placeholder="搜索文件名，可空格分隔多个关键词" autocomplete="off" spellcheck="false" />
+          <kbd class="searchbox__kbd">Ctrl K</kbd>
+        </div>
+        <button class="btn btn--ghost" id="btnUndo" type="button">
+          <svg class="btn__icon"><use href="#i-undo" /></svg>
+          <span>撤销</span>
+        </button>
+        <button class="btn btn--primary" id="btnPreview" type="button">
+          <svg class="btn__icon"><use href="#i-spark" /></svg>
+          <span>预览整理</span>
+        </button>
+      </header>
+
+      <div class="content" id="content">
+        <section class="panel" id="filesPanel">
+          <div class="stat-row" id="statRow"></div>
+
+          <div class="section-head">
+            <div>
+              <h2 class="section-title" id="sectionTitle">全部文件</h2>
+              <p class="section-sub" id="sectionSub">选择一个文件夹开始</p>
+            </div>
+            <div class="segmented" id="sortSeg">
+              <button data-sort="mtime" class="is-active" type="button">最近修改</button>
+              <button data-sort="name" type="button">名称</button>
+              <button data-sort="size" type="button">大小</button>
+            </div>
+          </div>
+
+          <div class="grid" id="fileGrid"></div>
+
+          <div class="similar" id="similarPanel" hidden>
+            <div class="similar__head">
+              <svg class="similar__icon"><use href="#i-spark" /></svg>
+              <span>相似文件推荐</span>
+              <span class="similar__note" id="similarNote"></span>
+            </div>
+            <div class="similar__list" id="similarList"></div>
+          </div>
+        </section>
+
+        <section class="panel" id="settingsPanel" hidden></section>
+        <section class="panel" id="historyPanel" hidden></section>
+      </div>
+    </main>
+  </div>
+
+  <div class="scrim" id="scrim" hidden></div>
+
+  <div class="sheet" id="previewSheet" hidden>
+    <div class="sheet__head">
+      <div>
+        <h2 class="sheet__title">预览整理结果</h2>
+        <p class="sheet__sub" id="previewSub">确认后才会移动文件</p>
+      </div>
+      <button class="icon-btn" id="closePreview" type="button"><svg><use href="#i-close" /></svg></button>
+    </div>
+    <div class="sheet__progress" id="previewProgress" hidden>
+      <div class="progress"><div class="progress__bar" id="progressBar"></div></div>
+      <span class="progress__text" id="progressText">0 / 0</span>
+    </div>
+    <div class="sheet__body" id="previewBody"></div>
+    <div class="sheet__foot">
+      <span class="sheet__meta" id="previewMeta"></span>
+      <div class="sheet__actions">
+        <button class="btn btn--ghost" id="cancelPreview" type="button">取消</button>
+        <button class="btn btn--primary" id="confirmOrganize" type="button">
+          <svg class="btn__icon"><use href="#i-check" /></svg>
+          <span>确认整理</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toasts" id="toasts"></div>
+
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>

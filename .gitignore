@@ -1,0 +1,24 @@
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+out/
+release/
+*.log
+
+# 运行时数据
+storage/
+demo/
+_demo_files/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 编辑器
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp

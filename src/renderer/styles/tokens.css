@@ -1,0 +1,167 @@
+/* ==========================================================================
+   tokens.css — 设计变量与基础重置
+   所有颜色/阴影/时长只在这里定义，组件层不写死数值。
+   ========================================================================== */
+
+:root {
+  /* 底色：米白偏冷，避免纯白刺眼 */
+  --bg: #E9ECF1;
+  --bg-soft: #EDEFF3;
+  --bg-deep: #E2E6EC;
+
+  /* 玻璃层：三级透明度，越靠上越实 */
+  --glass-1: rgba(255, 255, 255, 0.5);
+  --glass-2: rgba(255, 255, 255, 0.66);
+  --glass-3: rgba(255, 255, 255, 0.84);
+
+  --stroke-1: rgba(255, 255, 255, 0.88);
+  --stroke-2: rgba(180, 190, 205, 0.32);
+  --stroke-3: rgba(150, 162, 180, 0.28);
+
+  /* 文字：四级层级，全部通过对比度检查 */
+  --ink-1: #2E3440;
+  --ink-2: #566173;
+  --ink-3: #7E8899;
+  --ink-4: #A3ACB9;
+
+  /* 莫兰迪主色 */
+  --accent: #8A9BB0;
+  --accent-deep: #6E8099;
+  --accent-soft: #C9D6E4;
+  --ok: #7FA98C;
+  --warn: #C2A17E;
+  --danger: #C08484;
+
+  /* 新拟态阴影：右下冷灰、左上纯白，双向塑形 */
+  --shadow-out: 6px 6px 16px rgba(163, 177, 198, 0.42), -6px -6px 16px rgba(255, 255, 255, 0.92);
+  --shadow-out-lg: 10px 10px 26px rgba(163, 177, 198, 0.46), -8px -8px 22px rgba(255, 255, 255, 0.96);
+  --shadow-out-sm: 4px 4px 10px rgba(163, 177, 198, 0.38), -4px -4px 10px rgba(255, 255, 255, 0.9);
+  --shadow-in: inset 3px 3px 7px rgba(163, 177, 198, 0.55), inset -3px -3px 7px rgba(255, 255, 255, 0.95);
+  --shadow-in-sm: inset 2px 2px 5px rgba(163, 177, 198, 0.5), inset -2px -2px 5px rgba(255, 255, 255, 0.92);
+
+  --r-xl: 22px;
+  --r-lg: 16px;
+  --r-md: 12px;
+  --r-sm: 9px;
+  --r-pill: 999px;
+
+  /* 六档时长（原则 9：Timing） */
+  --t-1: 80ms;
+  --t-2: 120ms;
+  --t-3: 180ms;
+  --t-4: 240ms;
+  --t-5: 320ms;
+  --t-6: 420ms;
+
+  /* 缓动：进出各减速（原则 6：Slow in & out） */
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --font: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "PingFang SC", system-ui, -apple-system, sans-serif;
+  --font-mono: "Cascadia Mono", "Consolas", monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font);
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-1);
+  background:
+    radial-gradient(680px 420px at 12% -8%, rgba(255, 255, 255, 0.9), transparent 62%),
+    radial-gradient(560px 380px at 96% 102%, rgba(201, 214, 228, 0.55), transparent 66%),
+    var(--bg);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  user-select: none;
+}
+
+svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+input {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(150, 162, 180, 0.35);
+  border: 3px solid transparent;
+  border-radius: var(--r-pill);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(150, 162, 180, 0.55);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 无障碍降级：系统要求减少动效时，所有时长归零 */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --t-1: 1ms;
+    --t-2: 1ms;
+    --t-3: 1ms;
+    --t-4: 1ms;
+    --t-5: 1ms;
+    --t-6: 1ms;
+  }
+
+  * {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+/* 动效强度：设置里可切换到 off / soft */
+body[data-motion="off"] * {
+  animation: none !important;
+  transition: none !important;
+}
+
+body[data-motion="soft"] {
+  --t-4: 160ms;
+  --t-5: 220ms;
+  --t-6: 280ms;
+}

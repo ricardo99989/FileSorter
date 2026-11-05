@@ -1,0 +1,43 @@
+appId: com.filesorter.app
+productName: FileSorter
+copyright: Copyright © 2026 FileSorter Contributors
+
+directories:
+  output: dist
+  buildResources: build
+
+# 只打包运行期需要的文件，源码目录之外的开发物料一律排除
+files:
+  - src/**/*
+  - package.json
+  - "!**/*.map"
+  - "!**/.DS_Store"
+
+asar: true
+
+# 复用本地已安装的 Electron 二进制，避免打包时重复下载 100MB+
+electronDist: node_modules/electron/dist
+forceCodeSigning: false
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+  artifactName: FileSorter-${version}-${arch}.${ext}
+  # 免安装版：解压即用，不需要管理员权限
+  requestedExecutionLevel: asInvoker
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: FileSorter
+  deleteAppDataOnUninstall: false
+  installerLanguages:
+    - zh_CN
+  language: "2052"
