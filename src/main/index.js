@@ -9,12 +9,15 @@ const {
 } = require('electron');
 
 const { createStore } = require('./store');
+const { createClipboardHistory } = require('./clipboard');
 const { createUndo } = require('./undo');
 const { createTags } = require('./tags');
 const { createWatcher } = require('./watcher');
 const { createScheduler } = require('./scheduler');
 const { registerIpc } = require('./ipc');
 const organizer = require('./organizer');
+const indexer = require('./indexer');
+const quick = require('./quick');
 const fsops = require('./fsops');
 const cloud = require('./cloud');
 const plugins = require('./plugins');
@@ -38,6 +41,7 @@ let undo = null;
 let tags = null;
 let watcher = null;
 let scheduler = null;
+let clip = null;
 let cloudDirs = [];
 let quitting = false;
 let smokeWatcherTimer = null;
@@ -585,6 +589,36 @@ function attachSmokeProbe(win) {
     await new Promise((resolve) => setTimeout(resolve, 1600));
 
     /**
+     * 快速启动窗的取证：截图不能走 desktopCapturer（那小窗在屏幕右上，位置不固定），
+     * 直接 capturePage 拿它自己的绘制树；再顺手回读行数，确认模糊匹配真的出结果。
+     */
+    if (process.argv.includes('--smoke-quick')) {
+      try {
+        quick.show();
+        const qwin = quick.getWindow();
+        await new Promise((resolve) => setTimeout(resolve, 700));
+        await qwin.webContents.executeJavaScript(
+          "(() => { const el = document.getElementById('q'); el.value = '会议'; el.dispatchEvent(new Event('input')); })()",
+        );
+        await new Promise((resolve) => setTimeout(resolve, 900));
+        const rows = await qwin.webContents.executeJavaScript(
+          "document.querySelectorAll('.quick__row').length",
+        );
+        const img = await qwin.webContents.capturePage();
+        const target = captureArg
+          ? path.resolve(captureArg.slice('--capture='.length))
+          : path.join(app.getPath('temp'), 'quick.png');
+        await fs.mkdir(path.dirname(target), { recursive: true });
+        await fs.writeFile(target, img.toPNG());
+        console.log('QUICKUI ' + JSON.stringify({ rows, target }));
+      } catch (err) {
+        console.error('[smoke] 快速启动取证失败:', err.message);
+      }
+      app.exit(0);
+      return;
+    }
+
+    /**
      * 合成桌面是 createWindow 里才铺上去的，而亮度表是在开窗之前采的。
      * 冒烟时必须在桌面铺好之后重采一次，否则测的还是真实壁纸的亮度。
      */
@@ -816,6 +850,24 @@ function attachSmokeProbe(win) {
             return b ? [b.clientHeight, b.scrollHeight] : null;
           })(),
         }));
+      })()`,
+      /* 3.8：索引 + 搜索耗时（只索引 SMOKE_INDEX_DIR，不扫整机） */
+      indexer: `(async () => {
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+        const out = {};
+        const stats = await window.filesorter.searchStats();
+        out.count = stats.ok ? stats.data.count : -1;
+        const times = [];
+        for (const q of ['report', 'e', 'pdf', '2026']) {
+          const t0 = performance.now();
+          const res = await window.filesorter.searchAll(q, 20);
+          times.push(Math.round((performance.now() - t0) * 10) / 10);
+          if (q === 'report') out.hits = res.ok ? res.data.total : -1;
+          if (q === 'pdf') out.first = res.ok ? res.data.results[0]?.name : null;
+        }
+        out.searchMs = times;
+        out.ready = stats.ok ? stats.data.ready : false;
+        console.log('INDEXER ' + JSON.stringify(out));
       })()`,
       /* 3.7：实时透桌面 —— 只验证"流起来了 + 有帧 + 采样矩形对得上"，画面用 capturePage 验 */
       live: `(async () => {
@@ -1088,6 +1140,39 @@ function attachSmokeProbe(win) {
         const item = document.querySelector('.place[data-path]');
         if (item) item.click();
       })()`,
+      /* 3.8：剪贴板浮层与 IPC 通道是否都通 */
+      clip: `(async () => {
+        const btn = document.getElementById('btnClip');
+        btn.click();
+        await new Promise((r) => setTimeout(r, 240));
+        const pop = document.getElementById('clipPop');
+        const res = await window.filesorter.clipList();
+        console.log('CLIPUI ' + JSON.stringify({
+          button: Boolean(btn),
+          open: Boolean(pop) && !pop.hidden,
+          rows: document.querySelectorAll('.clippop__row').length,
+          enabled: res.ok ? res.data.enabled : null,
+          count: res.ok ? res.data.count : -1
+        }));
+      })()`,
+      /* 3.8：主窗口切到全盘索引，输入即出结果 */
+      global: `(async () => {
+        const btn = document.getElementById('btnSearchMode');
+        btn.click();
+        const input = document.getElementById('searchInput');
+        input.value = '会议';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        await new Promise((r) => setTimeout(r, 800));
+        const probe = await window.filesorter.searchAll('会议', 20);
+        console.log('GLOBALUI ' + JSON.stringify({
+          all: btn.classList.contains('is-all'),
+          rows: document.querySelectorAll('.file-row').length,
+          note: (document.querySelector('.search-note')?.textContent || '').trim(),
+          hits: probe.ok ? probe.data.total : -1,
+          first: probe.ok ? (probe.data.results[0]?.name || null) : null,
+          took: probe.ok ? probe.data.took : -1
+        }));
+      })()`,
     };
 
     if (step) {
@@ -1247,6 +1332,19 @@ app.whenReady().then(async () => {
 
   startWatcher();
 
+  /** 剪贴板历史：低频读文本 + 本地持久化，界面通过 clip:changed 实时跟随 */
+  clip = createClipboardHistory({
+    clipboard,
+    userData: app.getPath('userData'),
+    onUpdate: (items) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('clip:changed', items);
+      }
+    },
+  });
+  await clip.start();
+  clip.setEnabled(store.get().clipboardHistory !== false);
+
   scheduler = createScheduler({
     getSettings: () => store.get(),
     onFire: () => runScheduledTidy(false),
@@ -1271,7 +1369,37 @@ app.whenReady().then(async () => {
     runScheduledTidy,
     notify,
     cloudDirs,
+    indexer,
+    clip,
   });
+
+  quick.registerIpc({ indexer });
+  const bound = quick.registerShortcuts();
+  if (bound.length) console.log('[quick] 全局快捷键:', bound.join(', '));
+  else console.warn('[quick] 全局快捷键注册失败');
+
+  /**
+   * 建索引放在窗口出来之后，且不 await —— 首次全盘扫描可能几十秒，
+   * 绝不能让它挡住首屏。冒烟默认跳过（每次跑测试都扫盘会拖慢回归）。
+   */
+  /**
+   * 冒烟：只索引指定目录，不扫整机。
+   * 这里 await 是有意的 —— 步骤脚本要立刻拿到结果，等它建完再跑。
+   */
+  if (isSmoke && process.env.SMOKE_INDEX_DIR) {
+    await indexer.build(app.getPath('userData'), {
+      roots: [process.env.SMOKE_INDEX_DIR],
+      useCache: false,
+    });
+  } else if (!isSmoke || process.env.SMOKE_INDEX) {
+    indexer
+      .build(app.getPath('userData'), {
+        onProgress: (count) => {
+          if (count % 20000 === 0) console.log('[index] 已索引', count);
+        },
+      })
+      .catch((err) => console.warn('[index] 建立失败:', err.message));
+  }
 
   /**
    * 先采桌面、再开窗：此刻窗口还不存在，截到的是一张干净的壁纸，
@@ -1340,6 +1468,8 @@ app.on('before-quit', () => {
   quitting = true;
   scheduler?.clear();
   watcher?.unwatch();
+  clip?.stop();
+  quick.unregisterShortcuts();
 });
 
 // 有托盘的程序不能因为关窗就退出

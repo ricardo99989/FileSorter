@@ -200,6 +200,17 @@
                 <path d="M16 16l4.2 4.2" />
               </svg>
               <input id="searchInput" type="text" placeholder="筛选或按回车搜索" autocomplete="off" spellcheck="false" />
+              <!-- 搜索范围：本目录（含子目录）/ 全盘索引。放在输入框内，切模式不用离开键盘 -->
+              <button class="field__scope" id="btnSearchMode" type="button" title="切换搜索范围 (Ctrl+Shift+K)" aria-label="切换搜索范围">
+                <svg class="field__scope-ico field__scope-ico--folder" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3.6 7.4A1.8 1.8 0 0 1 5.4 5.6h4.1l1.7 2h7.4a1.8 1.8 0 0 1 1.8 1.8v7.2a1.8 1.8 0 0 1-1.8 1.8H5.4a1.8 1.8 0 0 1-1.8-1.8z" />
+                </svg>
+                <svg class="field__scope-ico field__scope-ico--all" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="8.4" /><path d="M3.6 12h16.8M12 3.6c2.4 2.4 3.4 5.4 3.4 8.4s-1 6-3.4 8.4c-2.4-2.4-3.4-5.4-3.4-8.4S9.6 6 12 3.6z" />
+                </svg>
+                <span class="field__scope-label" data-i18n="search.folder">本目录</span>
+                <span class="field__scope-label field__scope-label--all" data-i18n="search.all">全盘</span>
+              </button>
             </label>
 
             <div class="segment" role="group" aria-label="视图切换">
@@ -246,6 +257,13 @@
               <button type="button" data-scope="recent" data-i18n="scope.recent">最近</button>
             </div>
             <span class="scopebar__hint" id="scopeHint"></span>
+            <button class="scopebar__clip" id="btnClip" type="button" title="剪贴板历史 (Ctrl+Alt+V)" aria-haspopup="dialog" aria-label="剪贴板历史">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="5" y="4.6" width="14" height="16.8" rx="2.4" />
+                <path d="M9 4.6V3.4h6v1.2M9 10h6M9 14h6M9 18h3.6" opacity=".7" />
+              </svg>
+              <span data-i18n="clip.entry">剪贴板</span>
+            </button>
           </div>
 
           <div class="selectionbar" id="selectionBar" hidden>
@@ -309,6 +327,22 @@
       用户只能看到上一次停留的那一个盘。这个浮层是它们在 460×340 里的替代入口。
     -->
     <div class="placepop" id="placePop" hidden role="menu" aria-label="位置与磁盘"></div>
+
+    <!-- 剪贴板历史：文本一律由渲染层用 textContent 写入，复制来的 HTML 不会被当标签解析 -->
+    <section class="clippop glass" id="clipPop" hidden role="dialog" aria-labelledby="clipTitle">
+      <header class="clippop__head">
+        <span class="clippop__title" id="clipTitle" data-i18n="clip.title">剪贴板历史</span>
+        <span class="clippop__count" id="clipCount"></span>
+        <button class="icon-btn" id="clipClose" type="button" aria-label="关闭">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19" /></svg>
+        </button>
+      </header>
+      <div class="clippop__list" id="clipList" role="list"></div>
+      <footer class="clippop__foot">
+        <span data-i18n="clip.hint">只记纯文本 · 仅存本机</span>
+        <button class="btn btn--sm btn--ghost" id="clipClear" type="button" data-i18n="clip.clear">清空</button>
+      </footer>
+    </section>
     <div class="toasts" id="toasts"></div>
 
     <!-- 折射滤镜：feDisplacementMap 拿 feTurbulence 当位移图，把背后的内容按噪声场拉扯。

@@ -113,6 +113,18 @@ contextBridge.exposeInMainWorld('filesorter', {
   setMode: (mode) => invoke('win:setMode', { mode }),
   glassBase: (value) => invoke('win:glassBase', { value }),
   geometry: () => invoke('win:geometry'),
+  searchAll: (query, limit = 40) => invoke('search:all', { query, limit }),
+  searchStats: () => invoke('search:stats'),
+  quickToggle: () => invoke('quick:toggle'),
+  desktopShortcut: (path) => invoke('fs:shortcut', { path }),
+
+  /* 剪贴板历史 */
+  clipList: () => invoke('clip:list'),
+  clipClear: () => invoke('clip:clear'),
+  clipRemove: (id) => invoke('clip:remove', { id }),
+  clipCopy: (id) => invoke('clip:copy', { id }),
+  clipSetEnabled: (enabled) => invoke('clip:setEnabled', { enabled }),
+
   setSide: (side) => invoke('win:setSide', { side }),
   background: (rects) => invoke('win:backdrop', { rects }),
   notify: (title, body) => invoke('win:notify', { title, body }),
@@ -126,5 +138,6 @@ contextBridge.exposeInMainWorld('filesorter', {
   onSpaceProgress: (handler) => subscribe('space:progress', handler),
   onFsChanged: (handler) => subscribe('fs:changed', handler),
   onModeChanged: (handler) => subscribe('win:modeChanged', handler),
+  onClipChanged: (handler) => subscribe('clip:changed', handler),
   onTrayAction: (handler) => subscribe('tray:action', handler),
 });

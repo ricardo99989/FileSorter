@@ -1,0 +1,208 @@
+/**
+ * quick.css — 全局快速启动窗
+ *
+ * 这一页刻意不引入 app.css：它要的是"按下去立刻出来"，
+ * 任何一条与主界面耦合的规则（布局、动画、网格）都是纯负担。
+ * 只依赖 tokens.css 的颜色/圆角与 material.css 的边缘光。
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  font-family: var(--font-ui, 'Segoe UI', 'Microsoft YaHei UI', sans-serif);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 整个窗口就是一块玻璃：外面留 10px 给投影，避免阴影被窗口裁掉 */
+body {
+  padding: 10px;
+}
+
+.quick {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  background: var(--sheet-bg);
+  border: 1px solid var(--glass-stroke);
+  box-shadow: var(--shadow-3);
+  overflow: hidden;
+  position: relative;
+}
+
+/* 顶部一道极细的高光：玻璃的边缘要有厚度，否则像个白盒子 */
+.quick::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: inset 0 1px 0 var(--edge-hi), inset 0 -1px 0 var(--edge-lo-2);
+}
+
+/* ------------------------------ 搜索栏 ------------------------------ */
+
+.quick__bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  height: 54px;
+  flex: none;
+  border-bottom: 1px solid var(--glass-stroke);
+}
+
+.quick__ico {
+  flex: none;
+  color: var(--ink-3);
+}
+
+.quick__input {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink-1);
+  font-size: 16px;
+  font-family: inherit;
+}
+
+.quick__input::placeholder {
+  color: var(--ink-4);
+}
+
+.quick__stat {
+  flex: none;
+  font-size: 11px;
+  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------ 结果 ------------------------------ */
+
+.quick__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--edge-lo-2) transparent;
+}
+
+.quick__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink-1);
+  text-align: left;
+  cursor: pointer;
+  /* 只动背景色：行高变化会让列表抖动 */
+  transition: background var(--t-fast, 120ms) var(--ease, ease);
+}
+
+.quick__row.is-active {
+  background: var(--accent-soft);
+}
+
+.quick__row-ico {
+  flex: none;
+  width: 17px;
+  height: 17px;
+  color: var(--ink-3);
+}
+
+.quick__row.is-active .quick__row-ico {
+  color: var(--accent-strong);
+}
+
+.quick__row-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.quick__row-name {
+  font-size: 13.5px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick__row-name mark {
+  background: transparent;
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+
+.quick__row-sub {
+  font-size: 11px;
+  color: var(--ink-4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick__empty {
+  padding: 40px 16px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--ink-4);
+}
+
+/* ------------------------------ 底部 ------------------------------ */
+
+.quick__foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 34px;
+  padding: 0 14px;
+  border-top: 1px solid var(--glass-stroke);
+  font-size: 11px;
+  color: var(--ink-4);
+}
+
+.quick__foot kbd {
+  display: inline-block;
+  min-width: 16px;
+  margin-right: 3px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--glass-2, rgba(0, 0, 0, 0.04));
+  font-family: inherit;
+  font-size: 10px;
+  text-align: center;
+  color: var(--ink-3);
+}
+
+.quick__hint {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.quick__perf {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.quick__hint {
+  margin-left: 0;
+  color: var(--ink-4);
+}

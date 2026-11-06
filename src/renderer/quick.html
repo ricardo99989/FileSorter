@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light" data-material="acrylic" data-glass-base="acrylic">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:" />
+    <title>快速搜索</title>
+    <link rel="stylesheet" href="./styles/tokens.css" />
+    <link rel="stylesheet" href="./styles/material.css" />
+    <link rel="stylesheet" href="./styles/quick.css" />
+  </head>
+  <body>
+    <main class="quick" id="quick">
+      <div class="quick__bar">
+        <svg class="quick__ico" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+          <circle cx="10.6" cy="10.6" r="6.4" />
+          <path d="M15.4 15.4 20 20" />
+        </svg>
+        <input
+          id="q"
+          class="quick__input"
+          type="text"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="搜文件名、路径，回车直接打开"
+          aria-label="搜索文件"
+        />
+        <span class="quick__stat" id="stat"></span>
+      </div>
+
+      <div class="quick__list" id="list" role="listbox" aria-label="搜索结果"></div>
+
+      <div class="quick__foot">
+        <span><kbd>↑</kbd><kbd>↓</kbd> 选择</span>
+        <span><kbd>Enter</kbd> 打开</span>
+        <span><kbd>Ctrl</kbd><kbd>Enter</kbd> 定位</span>
+        <span><kbd>Esc</kbd> 收起</span>
+        <span class="quick__perf" id="perf"></span>
+        <span class="quick__hint" id="hint"></span>
+      </div>
+    </main>
+
+    <script type="module" src="./js/quick.js"></script>
+  </body>
+</html>

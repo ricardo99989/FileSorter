@@ -54,6 +54,7 @@ function registerIpc(ctx) {
   const {
     ipcMain, dialog, shell, clipboard, app, store, undo, tags, watcher,
     getWindow, setMode, backdrop, recaptureBackdrop, pluginsDir, runScheduledTidy, scheduler, notify,
+    indexer, clip,
   } = ctx;
 
   /** 拿到当前窗口的发送器，窗口没了就静默丢弃 */
@@ -86,8 +87,9 @@ function registerIpc(ctx) {
     'settings:save',
     wrap(async (payload) => {
       const saved = await store.save(payload || {});
-      // 设置变了，定时器要跟着重排
+      // 设置变了，定时器要跟着重排；剪贴板记录的开关也在设置里
       if (scheduler) scheduler.arm();
+      if (clip) clip.setEnabled(saved.clipboardHistory !== false);
       return {
         settings: saved,
         categories: resolveCategories(saved.customNames),
@@ -424,6 +426,81 @@ function registerIpc(ctx) {
       fsops.invalidate();
       return result;
     }),
+  );
+
+  /* --------------------------- 桌面快捷方式 --------------------------- */
+
+  /**
+   * 给文件建一个桌面 .lnk。
+   * 目标直接指向文件本身（Windows 允许快捷方式指向文档），双击按默认程序打开。
+   * 同名已存在时加 (2)，不要悄悄覆盖用户已有的快捷方式。
+   */
+  ipcMain.handle(
+    'fs:shortcut',
+    wrap(async (payload) => {
+      if (process.platform !== 'win32') throw new Error('仅支持 Windows');
+      const source = assertTarget(payload.path);
+      const desktop = app.getPath('desktop');
+      const base = path.basename(source, path.extname(source));
+      let name = `${base}.lnk`;
+      let index = 2;
+      while (index < 100) {
+        const exists = await fsp
+          .lstat(path.join(desktop, name))
+          .then(() => true)
+          .catch(() => false);
+        if (!exists) break;
+        name = `${base} (${index}).lnk`;
+        index += 1;
+      }
+      const link = path.join(desktop, name);
+      const ok = shell.writeShortcutLink(link, 'create', {
+        target: source,
+        description: path.basename(source),
+      });
+      if (!ok) throw new Error('创建快捷方式失败');
+      return { path: link };
+    }),
+  );
+
+  /* --------------------------- 全盘索引 --------------------------- */
+
+  /**
+   * 主窗口也走同一个索引：Ctrl+K 只在当前目录搜，这里补一个"整机搜"。
+   * 索引没就绪时返回 ready:false，界面按此提示"正在建索引"。
+   */
+  ipcMain.handle(
+    'search:all',
+    wrap(async (payload) => {
+      if (!indexer) return { results: [], total: 0, took: 0, ready: false };
+      return indexer.search(payload?.query, { limit: payload?.limit });
+    }),
+  );
+
+  ipcMain.handle(
+    'search:stats',
+    wrap(async () => (indexer ? indexer.stats() : { ready: false, count: 0 })),
+  );
+
+  /* --------------------------- 剪贴板历史 --------------------------- */
+
+  /**
+   * 只把文本交给渲染层，且由渲染层用 textContent 写入 —— 复制来的内容可能含
+   * HTML 片段，拼进 innerHTML 就等于给本机页面开了一个注入口。
+   */
+  ipcMain.handle('clip:list', wrap(async () => (clip ? clip.list() : { items: [], enabled: false, count: 0 })));
+  ipcMain.handle('clip:clear', wrap(async () => (clip ? clip.clear() : { items: [], enabled: false, count: 0 })));
+  ipcMain.handle(
+    'clip:remove',
+    wrap(async (payload) => (clip ? clip.remove(payload?.id) : { items: [], enabled: false, count: 0 })),
+  );
+  ipcMain.handle(
+    'clip:copy',
+    wrap(async (payload) => Boolean(clip && clip.copy(payload?.id))),
+  );
+  ipcMain.handle(
+    'clip:setEnabled',
+    wrap(async (payload) => ({ enabled: clip ? clip.setEnabled(payload?.enabled !== false) : false })),
   );
 
   /* --------------------------- 删除 / 移动 --------------------------- */

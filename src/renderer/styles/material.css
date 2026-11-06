@@ -124,7 +124,7 @@
     #000 calc(100% - 13px)
   );
   mask-image: radial-gradient(closest-side, transparent calc(100% - 14px), #000 calc(100% - 13px));
-  animation: glass-flow 18s linear infinite;
+  animation: glass-flow 16s linear infinite;
 }
 
 @keyframes glass-flow {
@@ -248,13 +248,13 @@ html.motion-off .glass::after {
  * 仍然只加在内容区（--content-scrim）和边缘（bevel），面板本身保持 0 底色。
  */
 :root[data-glass-base='clear'] {
-  --content-scrim: rgb(248 250 253 / 0.22);
+  --content-scrim: rgb(248 250 253 / 0.18);
   --bevel-1: rgba(255, 255, 255, 0.56);
   --bevel-shade: rgba(16, 22, 36, 0.3);
 }
 
 :root[data-theme='dark'][data-glass-base='clear'] {
-  --content-scrim: rgb(6 8 12 / 0.32);
+  --content-scrim: rgb(6 8 12 / 0.26);
   --bevel-1: rgba(255, 255, 255, 0.26);
 }
 
@@ -286,9 +286,9 @@ html.motion-off .glass::after {
 
 /* 自带模糊，读区比"全透明"轻一档就够 */
 :root[data-glass-base='live'] {
-  --content-scrim: rgb(248 250 253 / 0.16);
+  --content-scrim: rgb(248 250 253 / 0.12);
 }
 
 :root[data-theme='dark'][data-glass-base='live'] {
-  --content-scrim: rgb(6 8 12 / 0.24);
+  --content-scrim: rgb(6 8 12 / 0.18);
 }

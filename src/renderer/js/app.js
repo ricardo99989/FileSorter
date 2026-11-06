@@ -63,6 +63,7 @@ const dom = {
   details: $('details'),
   search: $('searchInput'),
   searchField: $('searchField'),
+  btnSearchMode: $('btnSearchMode'),
   btnTheme: $('btnTheme'),
   btnList: $('btnList'),
   btnGrid: $('btnGrid'),
@@ -92,6 +93,12 @@ const dom = {
   previewClose: $('previewClose'),
   btnPlaces: $('btnPlaces'),
   placePop: $('placePop'),
+  btnClip: $('btnClip'),
+  clipPop: $('clipPop'),
+  clipList: $('clipList'),
+  clipCount: $('clipCount'),
+  clipClose: $('clipClose'),
+  clipClear: $('clipClear'),
 };
 
 const state = {
@@ -113,6 +120,8 @@ const state = {
   cwd: '',
   listing: null,
   entries: [],
+  /** 搜索范围：folder = 当前文件夹（含子目录深搜），all = 全盘内存索引 */
+  searchMode: 'folder',
   sort: { key: 'name', dir: 'asc' },
   view: 'list',
   cols: 1,
@@ -291,7 +300,7 @@ function applyStaticI18n() {
   for (const node of document.querySelectorAll('[data-i18n]')) {
     node.textContent = t(node.dataset.i18n);
   }
-  dom.search.placeholder = t('toolbar.search');
+  syncSearchScope();
 }
 
 /* ------------------------------ 主题 ------------------------------ */
@@ -475,6 +484,126 @@ if (dom.btnPlaces) {
     if (!item) return;
     closePlacePop();
     await navigate(item.dataset.path, { push: true });
+  });
+}
+
+/* ------------------------------ 剪贴板历史 ------------------------------ */
+
+const clipState = { items: [], enabled: true };
+
+function closeClipPop() {
+  if (!dom.clipPop || dom.clipPop.hidden) return;
+  dom.clipPop.hidden = true;
+  window.removeEventListener('click', onClipOutside, true);
+  window.removeEventListener('blur', closeClipPop);
+  dom.btnClip?.setAttribute('aria-expanded', 'false');
+}
+
+function onClipOutside(event) {
+  if (!dom.clipPop.contains(event.target) && !dom.btnClip.contains(event.target)) closeClipPop();
+}
+
+/** 文本一律 textContent：复制来的内容可能长得像 HTML，绝不能拼进 innerHTML */
+function renderClipRows() {
+  if (!dom.clipList) return;
+  dom.clipList.replaceChildren();
+  dom.clipCount.textContent = t('clip.count', { n: clipState.items.length });
+
+  if (!clipState.items.length) {
+    const empty = document.createElement('div');
+    empty.className = 'clippop__empty';
+    empty.textContent = clipState.enabled ? t('clip.empty') : t('clip.disabled');
+    dom.clipList.append(empty);
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  for (const item of clipState.items) {
+    const row = document.createElement('div');
+    row.className = 'clippop__row';
+    row.dataset.clipId = item.id;
+    row.setAttribute('role', 'button');
+    row.tabIndex = 0;
+    row.title = t('clip.copied');
+
+    const text = document.createElement('span');
+    text.className = 'clippop__text';
+    text.textContent = item.text;
+
+    const meta = document.createElement('span');
+    meta.className = 'clippop__meta';
+    meta.textContent = formatRelative(item.at);
+
+    const del = document.createElement('button');
+    del.className = 'clippop__del';
+    del.type = 'button';
+    del.dataset.clipDel = item.id;
+    del.title = t('clip.remove');
+    del.setAttribute('aria-label', t('clip.remove'));
+    del.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>';
+
+    row.append(text, meta, del);
+    fragment.append(row);
+  }
+  dom.clipList.append(fragment);
+}
+
+async function openClipPop() {
+  if (!dom.clipPop || !dom.btnClip) return;
+  if (!dom.clipPop.hidden) return closeClipPop();
+
+  const result = await api.clipList();
+  if (result.ok) {
+    clipState.items = Array.isArray(result.data.items) ? result.data.items : [];
+    clipState.enabled = result.data.enabled !== false;
+  }
+  renderClipRows();
+
+  dom.clipPop.hidden = false;
+  dom.btnClip.setAttribute('aria-expanded', 'true');
+  const rect = dom.btnClip.getBoundingClientRect();
+  dom.clipPop.style.left = '0px';
+  dom.clipPop.style.top = '0px';
+  const pop = dom.clipPop.getBoundingClientRect();
+  dom.clipPop.style.left = `${clamp(rect.right - pop.width, 8, window.innerWidth - pop.width - 8)}px`;
+  dom.clipPop.style.top = `${clamp(rect.bottom + 6, 8, window.innerHeight - pop.height - 8)}px`;
+
+  window.addEventListener('click', onClipOutside, true);
+  window.addEventListener('blur', closeClipPop);
+}
+
+if (dom.btnClip) {
+  dom.btnClip.addEventListener('click', openClipPop);
+  dom.clipClose?.addEventListener('click', closeClipPop);
+  dom.clipClear?.addEventListener('click', async () => {
+    const result = await api.clipClear();
+    if (!result.ok) return toast(result.error || t('toast.failed'), { error: true });
+    clipState.items = result.data.items || [];
+    renderClipRows();
+    toast(t('clip.cleared'));
+  });
+  dom.clipList?.addEventListener('click', async (event) => {
+    const row = event.target.closest('[data-clip-id]');
+    if (!row) return;
+    if (event.target.closest('[data-clip-del]')) {
+      const result = await api.clipRemove(row.dataset.clipId);
+      if (result.ok) {
+        clipState.items = result.data.items || [];
+        renderClipRows();
+      }
+      return;
+    }
+    const result = await api.clipCopy(row.dataset.clipId);
+    if (!result.ok || !result.data) return toast(result.error || t('toast.failed'), { error: true });
+    toast(t('clip.copied'));
+    closeClipPop();
+  });
+  dom.clipList?.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const row = event.target.closest('[data-clip-id]');
+    if (!row || event.target.closest('[data-clip-del]')) return;
+    event.preventDefault();
+    row.click();
   });
 }
 
@@ -673,7 +802,11 @@ function renderStatus() {
     )}</span>
       <span class="statusbar__dot"></span><span>${state.entries.length} 个结果</span>
       <span class="statusbar__spacer"></span>
-      <span class="statusbar__chip">${icon('info', 12)} 结果来自当前文件夹及其子文件夹</span>`;
+      <span class="statusbar__chip">${icon('info', 12)} ${esc(
+        state.deep.mode === 'all'
+          ? t('status.globalSource', { ms: state.deep.took ?? 0 })
+          : t('status.localSource'),
+      )}</span>`;
     return;
   }
   dom.statusbar.innerHTML =
@@ -713,7 +846,9 @@ function renderState() {
   let html = '';
   if (state.error) html = stateHtml(state.error.kind, { message: state.error.message });
   else if (!state.entries.length) {
-    if (state.deep) html = stateHtml('search', { query: state.deep.keyword, deep: true });
+    if (state.deep?.mode === 'all') {
+      html = stateHtml('global', { query: state.deep.keyword, ready: state.deep.ready });
+    } else if (state.deep) html = stateHtml('search', { query: state.deep.keyword, deep: true });
     else if (state.query) html = stateHtml('search', { query: state.query });
     // 空状态要分清"这个文件夹是空的"和"这个范围里没有东西"
     else if (state.scope === 'fav') html = stateHtml('fav');
@@ -812,6 +947,7 @@ async function navigate(dir, options = {}) {
   // 换了目录，上一轮的分类筛选就不该继续生效，否则用户会看到"空文件夹"
   if (!isSamePath(dir, state.cwd)) state.wheelFilter = '';
   if (!keepQuery) {
+    cancelGlobalSearch();
     state.query = '';
     state.deep = null;
     dom.search.value = '';
@@ -987,6 +1123,17 @@ function entryMenu(entry, x, y) {
       },
     },
     {
+      id: 'shortcut',
+      label: t('menu.desktopShortcut'),
+      icon: 'open',
+      action: async () => {
+        const result = await api.desktopShortcut(entry.path);
+        toast(result.ok ? t('toast.shortcut') : result.error || t('toast.failed'), {
+          error: !result.ok,
+        });
+      },
+    },
+    {
       id: 'move',
       label: t('menu.moveTo'),
       icon: 'folder',
@@ -1039,6 +1186,95 @@ async function copyEntry(entry) {
 
 /* ------------------------------ 搜索 ------------------------------ */
 
+/* --------------------------- 全盘搜索（3.8） --------------------------- */
+
+/**
+ * 全盘走主进程的内存索引，结果仍塞进 state.deep —— 这样虚拟列表、
+ * 右键菜单、快速预览、收藏、批量操作全都复用现成的一套，不用另写一层 UI。
+ */
+let globalSearchId = 0;
+let globalSearchTimer = 0;
+
+function syncSearchScope() {
+  if (!dom.btnSearchMode) return;
+  const all = state.searchMode === 'all';
+  dom.btnSearchMode.classList.toggle('is-all', all);
+  dom.btnSearchMode.setAttribute('aria-pressed', String(all));
+  dom.btnSearchMode.title = all ? t('search.scope.all') : t('search.scope.folder');
+  dom.search.placeholder = all ? t('search.scope.all') : t('toolbar.search');
+}
+
+/** 作废在途结果：输入比 IPC 快，旧响应回来不能盖掉新结果 */
+function cancelGlobalSearch() {
+  globalSearchId += 1;
+  clearTimeout(globalSearchTimer);
+  globalSearchTimer = 0;
+}
+
+function scheduleGlobalSearch(keyword) {
+  clearTimeout(globalSearchTimer);
+  // 50ms 已经能把一次连续键入合并掉，再长就会觉得"跟不上手"
+  globalSearchTimer = setTimeout(() => runGlobalSearch(keyword), 50);
+}
+
+async function runGlobalSearch(rawKeyword = dom.search.value) {
+  const keyword = String(rawKeyword || '').trim();
+  const id = ++globalSearchId;
+  if (!keyword) {
+    state.deep = null;
+    state.query = '';
+    renderList({ resetScroll: true });
+    syncSearchNote();
+    return;
+  }
+  const result = await api.searchAll(keyword, 60);
+  if (id !== globalSearchId || state.searchMode !== 'all') return;
+  if (!result.ok) {
+    toast(result.error || t('toast.failed'), { error: true });
+    return;
+  }
+  const rows = (result.data.results || []).map((item) => {
+    const ext = (item.name.split('.').pop() || '').toLowerCase();
+    return {
+      name: item.name,
+      path: item.path,
+      dir: item.dir,
+      size: item.size,
+      mtime: item.mtime,
+      ctime: item.mtime,
+      isDir: false,
+      tags: [],
+      // 副行直接写所在目录：全盘结果里"这是哪个盘的文件"比文件类型更重要
+      desc: { label: ext ? ext.toUpperCase() : '文件', category: 'other', brief: item.dir },
+    };
+  });
+  state.deep = {
+    keyword,
+    entries: rows,
+    mode: 'all',
+    total: result.data.total,
+    took: result.data.took,
+    ready: result.data.ready,
+  };
+  state.query = '';
+  renderList({ resetScroll: true });
+  syncSearchNote();
+}
+
+function setSearchMode(mode) {
+  const next = mode === 'all' ? 'all' : 'folder';
+  if (state.searchMode === next) return;
+  state.searchMode = next;
+  cancelGlobalSearch();
+  state.deep = null;
+  state.query = '';
+  dom.search.value = '';
+  syncSearchScope();
+  renderList({ resetScroll: true });
+  syncSearchNote();
+  dom.search.focus();
+}
+
 function syncSearchNote() {
   let note = dom.content.querySelector('.search-note');
   if (!state.deep || !state.entries.length) {
@@ -1050,8 +1286,16 @@ function syncSearchNote() {
     note.className = 'search-note';
     dom.content.insertBefore(note, dom.tableHead);
   }
-  note.innerHTML = `${icon('search', 12)}<span>在子文件夹中找到 ${state.entries.length} 个结果</span>
-    <button data-search-act="clear">退出搜索</button>`;
+  if (state.deep.mode === 'all') {
+    const text = state.deep.ready === false
+      ? t('search.global.indexing')
+      : t('search.global.hit', { n: state.entries.length, ms: state.deep.took ?? 0 });
+    note.innerHTML = `${icon('globe', 12)}<span>${esc(text)}</span>
+      <button data-search-act="clear">${esc(t('state.clear'))}</button>`;
+  } else {
+    note.innerHTML = `${icon('search', 12)}<span>在子文件夹中找到 ${state.entries.length} 个结果</span>
+      <button data-search-act="clear">退出搜索</button>`;
+  }
 }
 
 const applyFilter = debounce(() => {
@@ -1059,7 +1303,7 @@ const applyFilter = debounce(() => {
   /* 搜索结果是"逐项淡入"的，所以每次筛选都重置入场计时，让新一批行重新错开出现 */
   state.enterAt = Date.now();
   renderList({ resetScroll: true });
-}, 90);
+}, 60);
 
 async function runDeepSearch() {
   const keyword = dom.search.value.trim();
@@ -1084,6 +1328,7 @@ async function runDeepSearch() {
 }
 
 function clearSearch() {
+  cancelGlobalSearch();
   state.deep = null;
   state.query = '';
   dom.search.value = '';
@@ -1256,7 +1501,13 @@ async function cleanDupes() {
 /* ------------------------------ 空间分析 ------------------------------ */
 
 async function openSpace() {
-  state.space = { loading: true, result: null, progress: null };
+  state.space = {
+    loading: true,
+    result: null,
+    progress: null,
+    // 切过「按文件夹」后刷新不应被重置回「按类型」
+    pieMode: state.space?.pieMode || 'category',
+  };
   openDrawer('space');
   renderPanel();
   const result = await api.analyzeSpace(state.cwd);
@@ -1452,6 +1703,7 @@ async function saveSettings(patch, { rerender = true } = {}) {
   }
   state.settings = result.data.settings;
   state.categories = result.data.categories;
+  clipState.enabled = state.settings.clipboardHistory !== false;
   if (rerender) renderPanel();
   return result.data;
 }
@@ -2005,7 +2257,14 @@ dom.btnDetail.addEventListener('click', async () => {
 });
 
 dom.search.addEventListener('input', () => {
-  state.query = dom.search.value;
+  const value = dom.search.value;
+  if (state.searchMode === 'all') {
+    // 全盘结果本身就是"已过滤"的，不能再走本地 filterEntries 二次筛
+    state.query = '';
+    scheduleGlobalSearch(value);
+    return;
+  }
+  state.query = value;
   if (state.deep) {
     state.deep = null;
     syncSearchNote();
@@ -2014,8 +2273,20 @@ dom.search.addEventListener('input', () => {
 });
 
 dom.search.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter') runDeepSearch();
+  if (event.key === 'Enter') {
+    if (state.searchMode === 'all') {
+      clearTimeout(globalSearchTimer);
+      runGlobalSearch();
+    } else runDeepSearch();
+  }
   if (event.key === 'Escape') clearSearch();
+});
+
+dom.btnSearchMode?.addEventListener('click', (event) => {
+  // label 里嵌按钮：拦掉 label 的默认激活，避免点一下既切模式又抢焦点
+  event.preventDefault();
+  event.stopPropagation();
+  setSearchMode(state.searchMode === 'all' ? 'folder' : 'all');
 });
 
 dom.content.addEventListener('click', (event) => {
@@ -2160,8 +2431,13 @@ dom.drawer.addEventListener('click', async (event) => {
   /* 空间 */
   const spaceAct = event.target.closest('[data-space-act]');
   if (spaceAct) {
-    if (spaceAct.dataset.spaceAct === 'close') closePanel();
-    else if (spaceAct.dataset.spaceAct === 'refresh') openSpace();
+    const kind = spaceAct.dataset.spaceAct;
+    if (kind === 'close') closePanel();
+    else if (kind === 'refresh') openSpace();
+    else if (kind === 'pie-cat' || kind === 'pie-folder') {
+      state.space.pieMode = kind === 'pie-folder' ? 'folder' : 'category';
+      renderPanel();
+    }
     return;
   }
 
@@ -2508,6 +2784,12 @@ dom.modal.addEventListener('click', async (event) => {
       return;
     }
 
+    if (kind === 'accent-reset') {
+      state.settings.accent = '';
+      applyAccent('');
+      await saveSettings({ accent: '' }, { rerender: true });
+      return;
+    }
     if (kind === 'open-repo') {
       await api.openExternal(REPO_URL);
       return;
@@ -2525,6 +2807,15 @@ dom.modal.addEventListener('click', async (event) => {
 
 /** 设置里的输入项：失焦才提交，避免重绘打断输入 */
 dom.modal.addEventListener('change', async (event) => {
+  const accentInput = event.target.closest('[data-accent]');
+  if (accentInput) {
+    const value = accentInput.value === '#000000' ? '' : accentInput.value;
+    state.settings.accent = value;
+    applyAccent(value);
+    await saveSettings({ accent: value }, { rerender: false });
+    return;
+  }
+
   const catInput = event.target.closest('[data-cat]');
   if (catInput) {
     const id = catInput.dataset.cat;
@@ -2641,6 +2932,10 @@ window.addEventListener('resize', debounce(() => {
 window.addEventListener('keydown', (event) => {
   const inInput = event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement;
   if (event.key === 'Escape') {
+    if (dom.clipPop && !dom.clipPop.hidden) {
+      closeClipPop();
+      return;
+    }
     if (dom.placePop && !dom.placePop.hidden) {
       closePlacePop();
       return;
@@ -2675,7 +2970,13 @@ window.addEventListener('keydown', (event) => {
   }
   /* Ctrl+, 打开设置：紧凑模式下侧栏没了，这是唯一不依赖鼠标的入口 */
   /* Ctrl+K 唤起搜索：不管焦点在哪都抢过来 */
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+  /* Ctrl+Shift+K 切换「本目录 / 全盘」，换模式不用摸鼠标 */
+  if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'k') {
+    event.preventDefault();
+    setSearchMode(state.searchMode === 'all' ? 'folder' : 'all');
+    return;
+  }
+  if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'k') {
     event.preventDefault();
     dom.search.focus();
     dom.search.select();
@@ -2702,6 +3003,12 @@ window.addEventListener('keydown', (event) => {
   if ((event.ctrlKey || event.metaKey) && event.key === ',') {
     event.preventDefault();
     openSettings();
+    return;
+  }
+  /* Ctrl+Alt+V 打开剪贴板历史（避开 Ctrl+Shift+V 的"粘贴为纯文本"） */
+  if ((event.ctrlKey || event.metaKey) && event.altKey && event.key.toLowerCase() === 'v') {
+    event.preventDefault();
+    openClipPop();
     return;
   }
   /* Ctrl+Shift+W 回到窗口模式（Ctrl+W 是关闭窗口，别抢） */
@@ -2849,6 +3156,12 @@ api.onSpaceProgress((progress) => {
   if (state.panel === 'space') renderPanel();
 });
 
+/** 剪贴板新条目：只有浮层开着才重绘，关着时连 DOM 都不碰 */
+api.onClipChanged?.((items) => {
+  clipState.items = Array.isArray(items) ? items : [];
+  if (dom.clipPop && !dom.clipPop.hidden) renderClipRows();
+});
+
 /** 文件系统有变化：只刷新可见目录，别的地方不用管 */
 api.onFsChanged((payload) => {
   if (!payload?.dir || !isSamePath(payload.dir, state.cwd)) return;
@@ -2969,6 +3282,47 @@ api.onModeChanged(({ mode, side }) => {
   renderWheel();
   list.schedule();
 });
+
+/* ---------------------------- 强调色 ---------------------------- */
+
+/**
+ * 强调色只有一个入口：--accent。其余两个派生值必须在这里算，
+ * 不能交给 CSS 的 color-mix（Electron 老版本没有，且它算出来的对比度不可控）。
+ *
+ * strong = 亮度 -18%（保证在浅色玻璃上还能当文字色）
+ * soft   = 8% 透明度（选中底、悬停底）
+ * ring   = 26%（焦点环）
+ */
+function hexToRgb(hex) {
+  const value = String(hex).replace('#', '');
+  return [
+    parseInt(value.slice(0, 2), 16),
+    parseInt(value.slice(2, 4), 16),
+    parseInt(value.slice(4, 6), 16),
+  ];
+}
+
+function shade(rgb, factor) {
+  return rgb.map((channel) => Math.max(0, Math.min(255, Math.round(channel * factor))));
+}
+
+function applyAccent(hex) {
+  const root = document.documentElement;
+  if (!hex || !/^#[0-9a-f]{6}$/i.test(hex)) {
+    // 清空内联值，回落到 tokens.css 的默认雾蓝灰
+    for (const name of ['--accent', '--accent-strong', '--accent-soft', '--accent-ring']) {
+      root.style.removeProperty(name);
+    }
+    return;
+  }
+  const rgb = hexToRgb(hex);
+  const strong = shade(rgb, 0.82);
+  const [r, g, b] = rgb;
+  root.style.setProperty('--accent', hex);
+  root.style.setProperty('--accent-strong', `rgb(${strong.join(', ')})`);
+  root.style.setProperty('--accent-soft', `rgba(${r}, ${g}, ${b}, 0.1)`);
+  root.style.setProperty('--accent-ring', `rgba(${r}, ${g}, ${b}, 0.3)`);
+}
 
 /* ---------------------------- 玻璃底 ---------------------------- */
 
@@ -3107,6 +3461,8 @@ async function boot() {
     if (fallback && !isSamePath(fallback, start)) await navigate(fallback, { push: true });
   }
 
+  applyAccent(state.settings.accent);
+  clipState.enabled = state.settings.clipboardHistory !== false;
   applyGlassTint();
   booted = true;
   // 上次停在实时档：启动时把流接回来（失败会自动退回系统磨砂）

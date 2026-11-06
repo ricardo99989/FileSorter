@@ -10,7 +10,7 @@ const path = require('node:path');
  * 保证 settings.json 可以人工编辑、可以跨版本迁移。
  */
 const DEFAULT_SETTINGS = Object.freeze({
-  version: 5,
+  version: 6,
 
   /* ---------------- 整理 ---------------- */
   /** 分类 id → 用户自定义文件夹名 */
@@ -53,6 +53,8 @@ const DEFAULT_SETTINGS = Object.freeze({
    * 这是 Windows 上唯一能影响"通透度"的系统级开关，应用侧控制不了亚克力的霜有多重。
    */
   glassBase: 'acrylic',
+  /** 强调色（#rrggbb）；空字符串 = 用默认雾蓝灰 */
+  accent: '',
 
   /* ---------------- 窗口 ---------------- */
   /** 显示模式：window 窗口 / sidebar 侧边栏 / dock 任务栏悬浮 */
@@ -73,6 +75,8 @@ const DEFAULT_SETTINGS = Object.freeze({
   learnMode: false,
   /** 新手引导是否已看过 */
   onboarded: false,
+  /** 剪贴板文本历史（只存本地，设置里可随时关停 / 清空） */
+  clipboardHistory: true,
 
   /* ---------------- 监听与定时 ---------------- */
   /** 实时监听当前目录（chokidar 原生事件，不轮询） */
@@ -263,7 +267,9 @@ function createStore(baseDir) {
     if (typeof raw.autostart === 'boolean') next.autostart = raw.autostart;
     if (typeof raw.learnMode === 'boolean') next.learnMode = raw.learnMode;
     if (typeof raw.onboarded === 'boolean') next.onboarded = raw.onboarded;
+    if (typeof raw.clipboardHistory === 'boolean') next.clipboardHistory = raw.clipboardHistory;
     if (['acrylic', 'clear', 'live'].includes(raw.glassBase)) next.glassBase = raw.glassBase;
+    if (typeof raw.accent === 'string' && /^#[0-9a-f]{6}$/i.test(raw.accent)) next.accent = raw.accent;
     // 收藏只留绝对路径，去重、限长：这是个只增不减的列表，跑几年也不该把设置撑爆
     if (Array.isArray(raw.favorites)) {
       const seen = new Set();

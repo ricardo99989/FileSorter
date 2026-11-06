@@ -176,6 +176,25 @@ function appearanceTab(state) {
 
       <div class="setting">
         <div class="setting__main">
+          <div class="setting__label">${t('settings.accent')}</div>
+          <div class="setting__hint">${t('settings.accent.hint')}</div>
+        </div>
+        <div class="setting__control" style="display:flex;align-items:center;gap:8px">
+          <input
+            type="color"
+            data-accent
+            value="${esc(s.accent || '#8a9bae')}"
+            class="accent-pick"
+            aria-label="${esc(t('settings.accent'))}"
+          />
+          <button class="btn btn--sm btn--ghost" type="button" data-set-act="accent-reset">
+            ${esc(t('settings.accent.reset'))}
+          </button>
+        </div>
+      </div>
+
+      <div class="setting">
+        <div class="setting__main">
           <div class="setting__label">${t('settings.glassBase')}</div>
           <div class="setting__hint">${t('settings.glassBase.hint')}</div>
         </div>
@@ -195,6 +214,7 @@ function appearanceTab(state) {
       ${switchRow('skipHidden', t('settings.skipHidden'), '', s.skipHidden)}
       ${switchRow('closeToTray', t('settings.closeToTray'), '', s.closeToTray)}
       ${switchRow('watchEnabled', t('settings.watch'), t('settings.watch.hint'), s.watchEnabled)}
+      ${switchRow('clipboardHistory', t('settings.clipboard'), t('settings.clipboard.hint'), s.clipboardHistory !== false)}
       ${switchRow('learnMode', t('settings.learn'), t('settings.learn.hint'), s.learnMode)}
       ${switchRow('autostart', t('settings.autostart'), t('settings.autostart.hint'), s.autostart)}
     </div>
@@ -536,6 +556,9 @@ function aboutTab(state) {
       <div class="shortcut-grid">
         ${[
           ['Ctrl K', t('settings.shortcuts.search')],
+          ['Ctrl Shift K', t('settings.shortcuts.scope')],
+          ['Ctrl Alt Space', t('settings.shortcuts.quick')],
+          ['Ctrl Alt V', t('settings.shortcuts.clip')],
           ['Ctrl 1~6', t('settings.shortcuts.bucket')],
           ['Ctrl A', t('settings.shortcuts.selectAll')],
           ['Enter', t('settings.shortcuts.open')],

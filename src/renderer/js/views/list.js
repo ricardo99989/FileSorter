@@ -160,6 +160,12 @@ export function stateHtml(kind, options = {}) {
     empty: { icon: 'folder', title: t('state.empty.title'), desc: t('state.empty.desc'), acts: [] },
     fav: { icon: 'star', title: t('scope.fav'), desc: t('scope.fav.empty'), acts: [] },
     recent: { icon: 'ring', title: t('scope.recent'), desc: t('scope.recent.hint'), acts: [] },
+    global: {
+      icon: 'globe',
+      title: t('state.global.title'),
+      desc: options.ready === false ? t('state.global.indexing') : t('state.global.desc', { query: options.query || '' }),
+      acts: [{ act: 'clear', label: t('state.clear') }],
+    },
     search: {
       icon: 'search',
       title: options.deep ? t('state.searchDeep.title') : t('state.search.title'),

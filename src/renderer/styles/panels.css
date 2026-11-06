@@ -538,9 +538,51 @@
 }
 
 .legend__value {
+  min-width: 32px;
+  text-align: right;
   font-size: 11.5px;
   color: var(--ink-4);
   font-variant-numeric: tabular-nums;
+}
+
+.legend__size {
+  min-width: 58px;
+  text-align: right;
+  font-size: 11px;
+  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 饼图口径切换：按类型 / 按文件夹，共用一次扫描结果 */
+.pie-tabs {
+  display: flex;
+  gap: 3px;
+  margin-bottom: 8px;
+  padding: 2px;
+  border: 1px solid var(--card-stroke);
+  border-radius: 9px;
+  background: var(--glass-2);
+}
+
+.pie-tabs button {
+  flex: 1;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-3);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.pie-tabs button:hover {
+  color: var(--ink-1);
+}
+
+.pie-tabs button.is-active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 600;
 }
 
 .bar-row {

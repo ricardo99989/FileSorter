@@ -18,7 +18,7 @@
  * 源矩形按窗口在屏幕上的位置实时换算，所以窗口移动、跨屏、改尺寸都不需要重新取流。
  */
 
-const DOWNSAMPLE = 3;
+const DOWNSAMPLE = 4;
 /** 桌面流的采样矩形以 DIP 计算，视频是物理像素，靠这个比值换算 */
 const GEOMETRY_TTL = 1200;
 
@@ -33,6 +33,9 @@ const state = {
   running: false,
   frames: 0,
   lastTime: -1,
+  /** 上一次真正画到画布的时间；rAF 被暂停时由 watchdog 接管 */
+  lastDraw: 0,
+  watchdog: 0,
 };
 
 function clamp(value, min, max) {
@@ -83,7 +86,7 @@ function ensureCanvas(host) {
   state.ctx = canvas.getContext('2d', { alpha: false });
 }
 
-function frame(api) {
+function draw(api) {
   if (!state.running) return;
   const { video, canvas, ctx, geometry } = state;
 
@@ -102,7 +105,7 @@ function frame(api) {
   ) {
     const rect = sourceRect(video, geometry);
     if (rect) {
-      // 1/3 分辨率：模糊是低频信息，缩到这个尺寸足够，GPU/CPU 都省
+      // 1/4 分辨率：模糊是低频信息，缩到这个尺寸足够，GPU/CPU 都省
       const cw = Math.max(160, Math.round(window.innerWidth / DOWNSAMPLE));
       const ch = Math.max(120, Math.round(window.innerHeight / DOWNSAMPLE));
       if (canvas.width !== cw || canvas.height !== ch) {
@@ -110,7 +113,8 @@ function frame(api) {
         canvas.height = ch;
       }
       // 略放大绘制：canvas 的 filter 模糊会让边缘变透明，放大 10% 把边缘推到画布外
-      ctx.filter = 'blur(6px) saturate(1.9) brightness(1.05)';
+      // 4 倍降采样后模糊半径要跟着放大，否则放大回来会显得太锐
+      ctx.filter = 'blur(7px) saturate(1.9) brightness(1.05)';
       ctx.drawImage(
         video,
         rect.sx,
@@ -124,6 +128,7 @@ function frame(api) {
       );
       state.lastTime = video.currentTime;
       state.frames += 1;
+      state.lastDraw = performance.now();
     }
   }
 
@@ -131,8 +136,28 @@ function frame(api) {
   if (performance.now() - state.geometryAt > GEOMETRY_TTL) {
     readGeometry(api);
   }
+}
 
+function frame(api) {
+  if (!state.running) return;
+  draw(api);
   state.raf = requestAnimationFrame(() => frame(api));
+}
+
+/**
+ * 兜底心跳。
+ * 窗口被别的程序盖住时 Chromium 会把文档标成 hidden，并把 rAF 整个停掉 ——
+ * 此时用户把窗口拖回来的第一眼看到的是几秒前的旧桌面。定时器在后台会被节流到
+ * 约 1s，正好用来补一帧：既不常驻吃 GPU，也不会露出陈旧的画面。
+ */
+function startWatchdog(api) {
+  clearInterval(state.watchdog);
+  state.watchdog = setInterval(() => {
+    if (!state.running) return;
+    if (performance.now() - state.lastDraw < 220) return; // rAF 正常跑着，不插手
+    draw(api);
+    state.lastDraw = performance.now();
+  }, 250);
 }
 
 export function isLiveRunning() {
@@ -170,6 +195,8 @@ export async function startLiveBackground(api, host) {
   state.running = true;
   state.frames = 0;
   state.lastTime = -1;
+  state.lastDraw = performance.now();
+  startWatchdog(api);
   state.raf = requestAnimationFrame(() => frame(api));
 
   return { frames: 0 };
@@ -178,6 +205,8 @@ export async function startLiveBackground(api, host) {
 export function stopLiveBackground() {
   state.running = false;
   cancelAnimationFrame(state.raf);
+  clearInterval(state.watchdog);
+  state.watchdog = 0;
   state.raf = 0;
   if (state.stream) {
     for (const track of state.stream.getTracks()) track.stop();
