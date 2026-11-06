@@ -73,6 +73,8 @@ def set_prefs(theme, mode):
     d['mode'] = mode
     # 截图不要新手引导挡在中间
     d['onboarded'] = True
+    # 实时档会开内容保护，截图里窗口会被抹掉 —— 文档截图一律用系统磨砂
+    d['glassBase'] = 'acrylic'
     # 截图里不要保留"上次拖过的窗口尺寸"，统一用默认
     with open(target, 'w', encoding='utf-8') as f:
         json.dump(d, f, ensure_ascii=False, indent=2)

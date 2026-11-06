@@ -5,7 +5,7 @@ const fsSync = require('node:fs');
 const fs = require('node:fs/promises');
 const {
   app, BrowserWindow, ipcMain, dialog, shell, clipboard, Menu, Tray,
-  nativeTheme, nativeImage, Notification, screen, desktopCapturer,
+  nativeTheme, nativeImage, Notification, screen, desktopCapturer, session,
 } = require('electron');
 
 const { createStore } = require('./store');
@@ -319,7 +319,9 @@ function createWindow() {
       ? {
           backgroundMaterial:
             process.env.SMOKE_MATERIAL ||
-            (store.get().glassBase === 'clear' ? 'none' : 'acrylic'),
+            (store.get().glassBase === 'clear' || store.get().glassBase === 'live'
+              ? 'none'
+              : 'acrylic'),
         }
       : {}),
     title: 'FileSorter',
@@ -338,6 +340,14 @@ function createWindow() {
       plugins: true,
     },
   });
+
+  /**
+   * 实时玻璃档必须开内容保护：DWM 会把这扇窗从所有截图路径里排除，
+   * 于是桌面流拿到的是"窗口背后"的画面。不在这档时绝不开 —— 开了用户自己就截不到图。
+   */
+  if (store.get().glassBase === 'live') {
+    mainWindow.setContentProtection(true);
+  }
 
   mainWindow.once('ready-to-show', () => {
     /**
@@ -807,6 +817,19 @@ function attachSmokeProbe(win) {
           })(),
         }));
       })()`,
+      /* 3.7：实时透桌面 —— 只验证"流起来了 + 有帧 + 采样矩形对得上"，画面用 capturePage 验 */
+      live: `(async () => {
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+        const out = {};
+        const applied = await window.__lens.setGlassBase('live');
+        out.applied = applied.ok;
+        if (applied.error) out.error = applied.error;
+        await wait(2200);
+        out.dataset = document.documentElement.dataset.glassBase;
+        out.stats = window.__lens.liveStats();
+        out.geom = await window.filesorter.geometry().then((r) => r.data?.display || null);
+        console.log('LIVE ' + JSON.stringify(out));
+      })()`,
       /* 3.6：玻璃底切换 + 设置页是否出现新行 */
       glassbase: `(async () => {
         const out = {};
@@ -1185,6 +1208,32 @@ if (!app.requestSingleInstanceLock()) {
 app.whenReady().then(async () => {
   app.setAppUserModelId('com.filesorter.app');
   Menu.setApplicationMenu(null);
+
+  /**
+   * 实时透桌面：渲染进程要一条桌面流。
+   *
+   * 只在「实时」档放行，其他档直接拒绝 —— 不要给应用留一个"随时能录屏"的默认能力。
+   * 选源按主窗口所在的那块屏认领，多显示器下不会抓错屏。
+   */
+  session.defaultSession.setDisplayMediaRequestHandler(async (request, callback) => {
+    try {
+      if (store.get().glassBase !== 'live') return callback({});
+      const bounds = mainWindow && !mainWindow.isDestroyed()
+        ? mainWindow.getBounds()
+        : screen.getPrimaryDisplay().bounds;
+      const display = screen.getDisplayMatching(bounds);
+      const sources = await desktopCapturer.getSources({
+        types: ['screen'],
+        thumbnailSize: { width: 0, height: 0 },
+      });
+      const source =
+        sources.find((item) => String(item.display_id) === String(display.id)) || sources[0];
+      if (!source) return callback({});
+      callback({ video: source });
+    } catch {
+      callback({});
+    }
+  });
 
   store = createStore(app.getPath('userData'));
   await store.load();

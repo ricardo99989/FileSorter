@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('node:path');
+const { screen } = require('electron');
 const fsp = require('node:fs/promises');
 const scanner = require('./scanner');
 const organizer = require('./organizer');
@@ -793,13 +794,40 @@ function registerIpc(ctx) {
   ipcMain.handle(
     'win:glassBase',
     wrap(async (payload) => {
-      const value = payload?.value === 'clear' ? 'clear' : 'acrylic';
+      const value = ['clear', 'live'].includes(payload?.value) ? payload.value : 'acrylic';
       const win = getWindow();
       if (win && !win.isDestroyed()) {
-        win.setBackgroundMaterial(value === 'clear' ? 'none' : 'acrylic');
+        // live 档不要系统材质，模糊由渲染进程自己算；而且必须开内容保护，
+        // 否则桌面流会把我们自己的窗口拍进去，形成"画中画无限套娃"
+        win.setBackgroundMaterial(value === 'acrylic' ? 'acrylic' : 'none');
+        win.setContentProtection(value === 'live');
       }
       await store.save({ glassBase: value });
       return { glassBase: value };
+    }),
+  );
+
+  /**
+   * 窗口所在屏幕的几何信息。
+   * 渲染进程拿它把"窗口在屏内的位置"换算成桌面视频里的采样矩形 ——
+   * 这是实时背景能做到跟桌面严丝合缝的关键，多屏/缩放都靠这个比值。
+   */
+  ipcMain.handle(
+    'win:geometry',
+    wrap(async () => {
+      const win = getWindow();
+      if (!win || win.isDestroyed()) return { display: null };
+      const bounds = win.getBounds();
+      const display = screen.getDisplayMatching(bounds);
+      return {
+        window: bounds,
+        display: {
+          id: display.id,
+          bounds: display.bounds,
+          workArea: display.workArea,
+          scaleFactor: display.scaleFactor,
+        },
+      };
     }),
   );
 

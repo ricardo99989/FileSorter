@@ -185,6 +185,7 @@ function appearanceTab(state) {
             [
               { value: 'acrylic', label: t('settings.glassBase.acrylic') },
               { value: 'clear', label: t('settings.glassBase.clear') },
+              { value: 'live', label: t('settings.glassBase.live') },
             ],
             s.glassBase || 'acrylic',
           )}

@@ -31,6 +31,7 @@ import {
 } from './wheel.js';
 import { organizeHtml } from './panels/organize.js';
 import { settingsHtml, REPO_URL } from './panels/settings.js';
+import { startLiveBackground, stopLiveBackground, liveStats } from './livebg.js';
 import { dupesHtml } from './panels/dupes.js';
 import { spaceHtml } from './panels/space.js';
 import { batchHtml } from './panels/batch.js';
@@ -2288,10 +2289,13 @@ dom.modal.addEventListener('click', async (event) => {
       applyTheme();
       await api.settings.save({ theme: value });
     } else if (name === 'glassBase') {
-      state.settings.glassBase = value;
-      document.documentElement.dataset.glassBase = value;
-      const result = await api.glassBase(value);
-      if (!result.ok) toast(result.error || t('toast.failed'), { error: true });
+      const applied = await applyGlassBase(value);
+      // 失败时把分段控件退回真实值，别让按钮亮着但没生效
+      if (!applied.ok) {
+        for (const sibling of holder.children) {
+          sibling.classList.toggle('is-active', sibling.dataset.value === state.settings.glassBase);
+        }
+      }
     } else if (name === 'motion') {
       state.settings.motionLevel = value;
       applyMotion(value);
@@ -2966,6 +2970,44 @@ api.onModeChanged(({ mode, side }) => {
   list.schedule();
 });
 
+/* ---------------------------- 玻璃底 ---------------------------- */
+
+/**
+ * 三档：acrylic（系统磨砂）/ clear（全透明）/ live（实时透桌面）。
+ *
+ * live 档要额外起一条桌面流；起不来的情况必须**回退**到 acrylic 而不是停在 clear ——
+ * 没有模糊又没有系统材质的窗口，文字会直接糊在壁纸上，比不生效更糟。
+ */
+async function applyGlassBase(value) {
+  const root = document.documentElement;
+  const win = document.querySelector('.app-bg');
+
+  const result = await api.glassBase(value);
+  if (!result.ok) {
+    toast(result.error || t('toast.failed'), { error: true });
+    return { ok: false };
+  }
+
+  if (value === 'live') {
+    try {
+      await startLiveBackground(api, win);
+    } catch (err) {
+      stopLiveBackground();
+      await api.glassBase('acrylic');
+      state.settings.glassBase = 'acrylic';
+      root.dataset.glassBase = 'acrylic';
+      toast(t('toast.liveFailed'), { error: true });
+      return { ok: false, error: String(err?.message || err) };
+    }
+  } else {
+    stopLiveBackground();
+  }
+
+  state.settings.glassBase = value;
+  root.dataset.glassBase = value;
+  return { ok: true };
+}
+
 /* ---------------------------- 玻璃厚度 ---------------------------- */
 
 /**
@@ -3067,6 +3109,8 @@ async function boot() {
 
   applyGlassTint();
   booted = true;
+  // 上次停在实时档：启动时把流接回来（失败会自动退回系统磨砂）
+  if (state.settings.glassBase === 'live') await applyGlassBase('live');
   // 首启引导放在最后：此时目录、分类、窗口都已就绪，点"开始整理"能直接进预览
   maybeOnboard();
 }
@@ -3087,4 +3131,6 @@ window.__lens = {
   preview: (entry) => openPreview(entry),
   favorite: (entry) => toggleFavorite(entry),
   setScope: (scope) => setScope(scope),
+  liveStats: () => liveStats(),
+  setGlassBase: (value) => applyGlassBase(value),
 };

@@ -263,7 +263,7 @@ function createStore(baseDir) {
     if (typeof raw.autostart === 'boolean') next.autostart = raw.autostart;
     if (typeof raw.learnMode === 'boolean') next.learnMode = raw.learnMode;
     if (typeof raw.onboarded === 'boolean') next.onboarded = raw.onboarded;
-    if (raw.glassBase === 'acrylic' || raw.glassBase === 'clear') next.glassBase = raw.glassBase;
+    if (['acrylic', 'clear', 'live'].includes(raw.glassBase)) next.glassBase = raw.glassBase;
     // 收藏只留绝对路径，去重、限长：这是个只增不减的列表，跑几年也不该把设置撑爆
     if (Array.isArray(raw.favorites)) {
       const seen = new Set();

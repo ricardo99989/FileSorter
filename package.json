@@ -1,7 +1,7 @@
 {
   "name": "filesorter",
   "productName": "FileSorter",
-  "version": "3.6.0",
+  "version": "3.7.0",
   "description": "把文件整理做安全的 Windows 桌面工具：预览后执行、多步撤销、自定义规则、查重与标签",
   "main": "src/main/index.js",
   "license": "MIT",

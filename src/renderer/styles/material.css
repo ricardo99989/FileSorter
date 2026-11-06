@@ -257,3 +257,38 @@ html.motion-off .glass::after {
   --content-scrim: rgb(6 8 12 / 0.32);
   --bevel-1: rgba(255, 255, 255, 0.26);
 }
+
+/* --------------------- 玻璃底：实时透桌面档 --------------------- */
+
+/**
+ * 这一档下 canvas 就是"窗口背后的桌面"本身（已经过 1/3 降采样 + GPU 模糊）。
+ * 它必须在所有面板之下、且铺满整窗，否则面板边缘会露出真实桌面，
+ * 与模糊过的画面在边界处对不上 —— 那会形成一道很显眼的分界线。
+ */
+.app-bg canvas.livebg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* 视频源只负责解码，不参与布局；display:none 会让它停止出帧 */
+.app-bg video.livebg__src {
+  position: absolute;
+  left: -8px;
+  top: -8px;
+  width: 2px;
+  height: 2px;
+  opacity: 0.01;
+  pointer-events: none;
+}
+
+/* 自带模糊，读区比"全透明"轻一档就够 */
+:root[data-glass-base='live'] {
+  --content-scrim: rgb(248 250 253 / 0.16);
+}
+
+:root[data-theme='dark'][data-glass-base='live'] {
+  --content-scrim: rgb(6 8 12 / 0.24);
+}
