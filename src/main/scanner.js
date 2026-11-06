@@ -33,6 +33,17 @@ async function statBatch(paths) {
  * 递归收集文件路径。跳过符号链接（防止目录环），限制深度与总量。
  * @param {string} root
  */
+/**
+ * 递归时直接跳过的目录。
+ * 这些目录要么是成千上万个构建产物，要么是系统回收站，
+ * 搜"我的文件"时它们只会拖慢速度、增加噪声。
+ */
+const SKIP_DIRS = new Set([
+  'node_modules', '.git', '.svn', '.hg', '__pycache__', '.next', '.nuxt', '.cache',
+  'dist', 'build', 'release', 'target', 'vendor',
+  '$RECYCLE.BIN', 'System Volume Information', '.vscode', '.idea',
+]);
+
 async function collectPaths(root, { maxDepth = MAX_DEPTH, maxFiles = MAX_FILES } = {}) {
   const paths = [];
   const stack = [{ dir: root, depth: 0 }];
@@ -54,7 +65,9 @@ async function collectPaths(root, { maxDepth = MAX_DEPTH, maxFiles = MAX_FILES }
       if (entry.isSymbolicLink()) continue;
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        if (depth < maxDepth) stack.push({ dir: full, depth: depth + 1 });
+        if (depth < maxDepth && !SKIP_DIRS.has(entry.name)) {
+          stack.push({ dir: full, depth: depth + 1 });
+        }
       } else if (entry.isFile()) {
         paths.push(full);
       }
@@ -149,4 +162,4 @@ async function listAll(dir, options) {
   return { rows, truncated };
 }
 
-module.exports = { collectPaths, listTopFiles, listAll, buildStats, MAX_FILES };
+module.exports = { collectPaths, listTopFiles, listAll, buildStats, statBatch, MAX_FILES };

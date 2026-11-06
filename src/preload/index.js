@@ -105,7 +105,7 @@ contextBridge.exposeInMainWorld('filesorter', {
 
   /* 批量删除 / 移动（走回收站；重名不覆盖） */
   trash: (paths) => invoke('fs:trash', { paths }),
-  moveTo: (paths, dest) => invoke('fs:moveTo', { paths, dest }),
+  moveTo: (paths, dest, options = {}) => invoke('fs:moveTo', { paths, dest, create: Boolean(options.create) }),
   autostart: (enabled) => invoke('app:autostart', { enabled }),
 
   /* 窗口 */

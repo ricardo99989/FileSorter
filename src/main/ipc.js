@@ -464,7 +464,12 @@ function registerIpc(ctx) {
         .map((item) => assertTarget(item))
         .slice(0, 500);
 
-      const destStat = await fsp.stat(dest).catch(() => null);
+      let destStat = await fsp.stat(dest).catch(() => null);
+      // create=true：拖拽归类到"还不存在的分类文件夹"时自动建一个
+      if (!destStat && payload.create) {
+        await fsp.mkdir(dest, { recursive: true });
+        destStat = await fsp.stat(dest).catch(() => null);
+      }
       if (!destStat?.isDirectory()) throw new Error('目标不是文件夹');
 
       const freeName = async (dir, name) => {

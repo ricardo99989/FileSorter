@@ -313,8 +313,8 @@ function applyTheme(animate = true) {
     state.theme === 'system' ? t('settings.theme.system') : state.theme === 'dark' ? t('settings.theme.dark') : t('settings.theme.light');
   dom.btnTheme.innerHTML = icon(state.theme === 'system' ? 'monitor' : theme === 'dark' ? 'moon' : 'sun', 15);
   dom.btnTheme.title = `${t('toolbar.theme')}：${label}`;
-  // 主题变了，目标表面亮度也变了，厚度要重算（此时窗口尺寸没变，直接排一次）
-  if (booted) scheduleTint();
+  // 主题切换会换掉 --tint-rgb，厚度按新主题重算一次
+  if (booted) applyGlassTint();
 }
 
 media.addEventListener('change', () => {
@@ -746,6 +746,17 @@ async function navigate(dir, options = {}) {
   state.loading = false;
   state.listing = listing;
   state.cwd = listing.dir;
+
+  /**
+   * 记住"上次在哪"。以前只在启动时读 lastFolder、从来不写，
+   * 于是任何一次重启（含托盘常驻后重新打开、切模式后关掉再开）都会退回主目录 ——
+   * 用户看到的就是"一切到侧边栏/悬浮，只剩 C 盘的文件"。
+   * 800ms 防抖：连续点几下目录只写一次盘。
+   */
+  clearTimeout(navigate.persistTimer);
+  navigate.persistTimer = setTimeout(() => {
+    api.settings.save({ lastFolder: state.cwd });
+  }, 800);
   state.tagMap = listing.tags || {};
   state.cloud = listing.cloud || null;
   state.watching = listing.watching || null;
@@ -1554,6 +1565,154 @@ async function moveChecked() {
   await navigate(state.cwd, { push: false, refresh: true, keepQuery: true });
 }
 
+/* ------------------------------ 拖拽归类 ------------------------------ */
+
+/**
+ * 把卡片拖到轮盘的某个分类上，就把文件移进这个分类文件夹。
+ *
+ * 自动分类总有判错的，比起右键菜单里翻“移动到…”再选目录，拖一下最直接。
+ * 拖的是“当前勾选的所有文件”还是“这一个”，由 dragstart 时的选中状态决定。
+ */
+dom.vcontent.addEventListener('dragstart', (event) => {
+  const holder = event.target.closest?.('[data-path]');
+  if (!holder) return;
+  const path = holder.dataset.path;
+  const paths = state.checked.has(path) ? [...state.checked] : [path];
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('text/plain', JSON.stringify(paths));
+  dom.wheel.classList.add('is-dropping');
+});
+
+dom.vcontent.addEventListener('dragend', () => {
+  dom.wheel.classList.remove('is-dropping');
+  dom.wheel.querySelectorAll('.is-drop').forEach((node) => node.classList.remove('is-drop'));
+});
+
+function dropTargetIndex(event) {
+  const node = event.target.closest?.('[data-index]');
+  if (!node || !dom.wheel.contains(node)) return -1;
+  return Number(node.dataset.index);
+}
+
+dom.wheel.addEventListener('dragover', (event) => {
+  const index = dropTargetIndex(event);
+  if (index < 0) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'move';
+  dom.wheel.querySelectorAll('.is-drop').forEach((node) => node.classList.remove('is-drop'));
+  event.target.closest('[data-index]').classList.add('is-drop');
+});
+
+dom.wheel.addEventListener('drop', async (event) => {
+  const index = dropTargetIndex(event);
+  if (index < 0) return;
+  event.preventDefault();
+  dom.wheel.querySelectorAll('.is-drop').forEach((node) => node.classList.remove('is-drop'));
+  dom.wheel.classList.remove('is-dropping');
+
+  let paths = [];
+  try {
+    paths = JSON.parse(event.dataTransfer.getData('text/plain') || '[]');
+  } catch {
+    paths = [];
+  }
+  if (!paths.length) return;
+
+  const bucket = state.wheelModel?.buckets?.[index];
+  if (!bucket) return;
+
+  const existing = folderForBucket(bucket.key);
+  const folder = existing || state.cwd + '\\' + (BUCKET_FOLDERS[bucket.key] || ['其他'])[0];
+  const result = await api.moveTo(paths, folder, { create: true });
+  if (!result.ok) {
+    toast(result.error || t('toast.failed'), { error: true });
+    return;
+  }
+  toast(t('toast.classified', { n: result.data?.done?.length || 0 }));
+  clearChecked();
+  await navigate(state.cwd, { push: false, refresh: true, keepQuery: true });
+});
+
+/* ------------------------------ 新手引导 ------------------------------ */
+
+/**
+ * 第一次打开时的三步引导：选文件夹 → 看分类 → 开始。
+ * 三件事同屏，不做“点一步翻一页”的向导 —— 用户一眼就能看到要发生什么。
+ */
+function maybeOnboard() {
+  if (state.settings.onboarded) return;
+  const defaultDir =
+    state.places.find((place) => place.key === 'downloads')?.dir || state.cwd || '';
+  let chosen = defaultDir;
+
+  const layer = document.createElement('div');
+  layer.className = 'onboard';
+  layer.innerHTML = `
+    <div class="onboard__scrim"></div>
+    <div class="onboard__panel" role="dialog" aria-modal="true">
+      <div class="onboard__title">${esc(t('onboard.title'))}</div>
+      <div class="onboard__sub">${esc(t('onboard.sub'))}</div>
+
+      <div class="onboard__steps">
+        <div class="onboard__step">
+          <span class="onboard__num">1</span>
+          <div class="onboard__body">
+            <div class="onboard__label">${esc(t('onboard.pick'))}</div>
+            <div class="onboard__path" id="onboardPath">${esc(chosen || '—')}</div>
+          </div>
+          <button class="btn btn--sm" type="button" id="onboardPick">${esc(t('onboard.choose'))}</button>
+        </div>
+
+        <div class="onboard__step">
+          <span class="onboard__num">2</span>
+          <div class="onboard__body">
+            <div class="onboard__label">${esc(t('onboard.rules'))}</div>
+            <div class="onboard__path">${esc(t('onboard.rulesHint'))}</div>
+          </div>
+          <button class="btn btn--sm btn--ghost" type="button" id="onboardRules">${esc(t('onboard.editRules'))}</button>
+        </div>
+
+        <div class="onboard__step">
+          <span class="onboard__num">3</span>
+          <div class="onboard__body">
+            <div class="onboard__label">${esc(t('onboard.go'))}</div>
+            <div class="onboard__path">${esc(t('onboard.goHint'))}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="onboard__acts">
+        <button class="btn btn--sm btn--ghost" type="button" id="onboardSkip">${esc(t('onboard.skip'))}</button>
+        <button class="btn btn--sm btn--primary" type="button" id="onboardStart">${esc(t('onboard.start'))}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(layer);
+
+  const finish = async (open) => {
+    layer.remove();
+    state.settings.onboarded = true;
+    await api.settings.save({ onboarded: true });
+    if (open === 'rules') openSettings('rules');
+  };
+
+  layer.querySelector('#onboardPick').addEventListener('click', async () => {
+    const picked = await api.pickFolder(t('onboard.pick'));
+    if (picked.ok && picked.data?.path) {
+      chosen = picked.data.path;
+      layer.querySelector('#onboardPath').textContent = chosen;
+    }
+  });
+
+  layer.querySelector('#onboardRules').addEventListener('click', () => finish('rules'));
+  layer.querySelector('#onboardSkip').addEventListener('click', () => finish());
+  layer.querySelector('#onboardStart').addEventListener('click', async () => {
+    await finish();
+    if (!chosen) return;
+    await navigate(chosen);
+    openOrganize();
+  });
+}
+
 /* ------------------------------ 事件：列表 ------------------------------ */
 
 dom.vcontent.addEventListener('click', (event) => {
@@ -1989,6 +2148,9 @@ dom.modal.addEventListener('input', (event) => {
   if (key === 'mist') {
     // 立即生效但不重渲染：拖动时重渲染会让滑块本身被换掉，拖动直接断
     document.documentElement.style.setProperty('--mist', String(value));
+    // 滑块就是玻璃厚度：直接改 --tint-a，不用等设置保存回来
+    state.settings.mist = value;
+    applyGlassTint();
   }
 });
 
@@ -2362,7 +2524,6 @@ window.addEventListener('resize', debounce(() => {
     list.schedule();
   }
   renderCrumbs();
-  scheduleTint();
 }, 140));
 
 window.addEventListener('keydown', (event) => {
@@ -2686,8 +2847,6 @@ api.onModeChanged(({ mode, side }) => {
   if (state.panel === 'settings') renderPanel();
 
   playModeTransition(previous, mode, side);
-  // 窗口几何变了 => 面板背后换了一块桌面，厚度重算
-  scheduleTint();
 
   applyModeCopy();
   // 紧凑模式不显示轮盘，窗口模式才显示，切回来要重算
@@ -2695,77 +2854,22 @@ api.onModeChanged(({ mode, side }) => {
   list.schedule();
 });
 
-/* ---------------------- 玻璃厚度：按背景亮度自适应 ---------------------- */
+/* ---------------------------- 玻璃厚度 ---------------------------- */
 
 /**
- * 明暗只跟主题走，厚度跟背景走。
+ * 3.5 起，玻璃只保留一层极淡染色 —— 用户要的是"完全通透、没有底色干扰"。
  *
- * 上一版连明暗也交给采样（亮度 < 0.5 翻深色玻璃），结果用户在浅色模式下得到
- * 一块深色玻璃、浅色字压在浅色面上。现在：
- *   浅色模式 → 目标表面亮度 0.68，背景越暗白填料越多（5%~60%），永远压得住深色字
- *   深色模式 → 目标 0.22，背景越亮黑填料越多
- * 背景本来就够亮/够暗时只填 5% —— 那是"薄如蝉翼"的那一档。
+ * 染色透明度 = 4%（几乎看不见）+ 「玻璃厚度」滑块 × 0.26。
+ * 滑块拉到 0 就是纯玻璃（只剩模糊和边光），拉到 30 相当于 30% 白，
+ * 用来应付"背后是满屏图标、字看不清"的极端情况。默认 0。
+ *
+ * 上一版按每个面板背后的桌面亮度算不同透明度，结果是同一个窗口里三块玻璃
+ * 厚薄不一，切主题还会有一块没跟上 —— 那正是"模块明暗不统一"的来源。现在只有这一个值。
  */
-const TINT_PANELS = ['.titlebar', '.sidebar', '.main', '.details'];
-
-function tintAlpha(lum, busy, dark) {
-  // 0.72 是"深色 12px 字刚好清楚"的表面亮度；低于它就得靠填料补
-  const target = dark ? 0.22 : 0.72;
-  const tintLum = dark ? 0.08 : 1;
-  // 背景已经站在目标那一侧（浅色下够亮 / 深色下够暗）就只铺 5%，玻璃越薄越好；
-  // 站错边才靠填料把表面拉回目标亮度，保证文字对比度
-  const needFill = dark ? lum > target : lum < target;
-  let alpha = 0.05;
-  if (needFill) alpha = (target - lum) / (tintLum - lum);
-  // 背景越花越要压一层，否则细碎的文字边缘会和背景纹理打架
-  alpha += (Number(busy) || 0) * 0.05;
-  return Math.max(0.05, Math.min(0.7, Number(alpha.toFixed(3))));
-}
-
-let tintTimer = null;
-
-async function applyBackdropTint() {
-  const root = document.documentElement;
-  const dark = resolvedTheme() === 'dark';
-  const nodes = TINT_PANELS.map((sel) => document.querySelector(sel)).filter(Boolean);
-  const rects = nodes.map((el) => {
-    const r = el.getBoundingClientRect();
-    return {
-      x: Math.round(window.screenX + r.left),
-      y: Math.round(window.screenY + r.top),
-      width: Math.round(r.width),
-      height: Math.round(r.height),
-    };
-  });
-
-  let payload = null;
-  try {
-    const result = await api.background(rects);
-    payload = result && result.ok ? result.data : null;
-  } catch (err) {
-    payload = null;
-  }
-
-  const fallback = dark ? 0.18 : 0.72;
-  const busy = payload && typeof payload.busy === 'number' ? payload.busy : 0.4;
-  const globalLum =
-    payload && typeof payload.luminance === 'number' ? payload.luminance : fallback;
-  root.style.setProperty('--bg-busy', String(busy));
-
-  const globalAlpha = tintAlpha(globalLum, busy, dark);
-  root.style.setProperty('--tint-a', String(globalAlpha));
-
-  nodes.forEach((el, index) => {
-    const local = payload && Array.isArray(payload.panels) ? payload.panels[index] : null;
-    const lum = typeof local === 'number' ? local : globalLum;
-    el.style.setProperty('--tint-a', String(tintAlpha(lum, busy, dark)));
-    el.dataset.backdrop = lum >= 0.5 ? 'light' : 'dark';
-  });
-}
-
-function scheduleTint() {
-  clearTimeout(tintTimer);
-  tintTimer = setTimeout(applyBackdropTint, 160);
+function applyGlassTint() {
+  const mist = Math.max(0, Math.min(30, Number(state.settings.mist) || 0));
+  const alpha = 0.04 + (mist / 30) * 0.26;
+  document.documentElement.style.setProperty('--tint-a', alpha.toFixed(3));
 }
 
 api.onTrayAction((payload) => {
@@ -2846,9 +2950,10 @@ async function boot() {
     if (fallback && !isSamePath(fallback, start)) await navigate(fallback, { push: true });
   }
 
-  // 玻璃厚度按"面板背后的桌面亮度"定：开窗时主进程已经采过一张亮度表，这里只查表
-  await applyBackdropTint();
+  applyGlassTint();
   booted = true;
+  // 首启引导放在最后：此时目录、分类、窗口都已就绪，点"开始整理"能直接进预览
+  maybeOnboard();
 }
 
 boot().catch((err) => {
@@ -2863,7 +2968,7 @@ window.__lens = {
   state,
   navigate,
   openPanel: (kind) => (kind === 'settings' ? openSettings() : openDrawer(kind)),
-  refreshTint: () => applyBackdropTint(),
+  refreshTint: () => applyGlassTint(),
   preview: (entry) => openPreview(entry),
   favorite: (entry) => toggleFavorite(entry),
   setScope: (scope) => setScope(scope),

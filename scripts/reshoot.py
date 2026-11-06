@@ -71,6 +71,8 @@ def set_prefs(theme, mode):
         d = json.load(f)
     d['theme'] = theme
     d['mode'] = mode
+    # 截图不要新手引导挡在中间
+    d['onboarded'] = True
     # 截图里不要保留"上次拖过的窗口尺寸"，统一用默认
     with open(target, 'w', encoding='utf-8') as f:
         json.dump(d, f, ensure_ascii=False, indent=2)

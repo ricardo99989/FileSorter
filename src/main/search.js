@@ -71,9 +71,27 @@ function scoreSimilar(a, b) {
 async function search(dir, keyword, options = {}) {
   const { limit = 120, similarCount = 5 } = options;
   const started = Date.now();
-  const { rows, truncated } = await scanner.listAll(dir);
+  const { paths, truncated } = await scanner.collectPaths(dir, { maxFiles: 30000 });
 
-  const files = rows.map((row) => {
+  const tokens = String(keyword || '').toLowerCase().split(/\s+/).filter(Boolean);
+  const needle = tokens.join(' ');
+
+  /**
+   * 先按文件名筛，再 stat —— 这是这一版最重要的性能改动。
+   *
+   * 旧写法是"先把整棵树 stat 一遍，再在内存里过滤"，一个几万文件的目录要发
+   * 几万次 stat，光这一步就要几秒。文件名匹配是纯字符串操作，几乎不要钱；
+   * 先筛出命中的几十个，再 stat 它们，I/O 次数直接掉两个数量级。
+   */
+  const matchedPaths = [];
+  const restPaths = [];
+  for (const full of paths) {
+    const base = path.basename(full).toLowerCase();
+    if (tokens.length && tokens.every((token) => base.includes(token))) matchedPaths.push(full);
+    else if (restPaths.length < 400) restPaths.push(full);
+  }
+
+  const toFile = (row) => {
     const name = path.basename(row.path);
     const cat = classify(name);
     return {
@@ -86,29 +104,27 @@ async function search(dir, keyword, options = {}) {
       ext: extOf(name),
       categoryId: cat.id,
     };
-  });
+  };
 
-  const tokens = String(keyword || '').toLowerCase().split(/\s+/).filter(Boolean);
-  let hits = [];
-  if (tokens.length) {
-    const needle = tokens.join(' ');
-    hits = files.filter((file) => {
-      const lower = file.name.toLowerCase();
-      return lower.includes(needle) && tokens.every((t) => lower.includes(t));
-    });
-    hits.sort((a, b) => {
+  // 命中项最多 stat 4×limit 个：再多用户也翻不到
+  const hitRows = await scanner.statBatch(matchedPaths.slice(0, limit * 4));
+  const hits = hitRows
+    .map(toFile)
+    .sort((a, b) => {
       const aStarts = a.name.toLowerCase().startsWith(needle) ? 1 : 0;
       const bStarts = b.name.toLowerCase().startsWith(needle) ? 1 : 0;
       if (aStarts !== bStarts) return bStarts - aStarts;
       return b.mtime - a.mtime;
     });
-  }
 
   let similar = [];
   if (hits.length) {
     const anchor = hits[0];
-    const hitPaths = new Set(hits.map((h) => h.path));
-    similar = files
+    const hitPaths = new Set(hits.map((hit) => hit.path));
+    // 相似推荐只看一小撮"没命中"的候选，不为了 5 条推荐把整棵树都 stat 了
+    const sampleRows = await scanner.statBatch(restPaths.slice(0, 240));
+    similar = sampleRows
+      .map(toFile)
       .filter((file) => !hitPaths.has(file.path))
       .map((file) => ({ file, score: scoreSimilar(anchor, file) }))
       .filter((entry) => entry.score > 0)
@@ -121,7 +137,7 @@ async function search(dir, keyword, options = {}) {
     keyword,
     anchor: hits[0] || null,
     hits: hits.slice(0, limit),
-    hitTotal: hits.length,
+    hitTotal: matchedPaths.length,
     similar,
     truncated,
     elapsed: Date.now() - started,

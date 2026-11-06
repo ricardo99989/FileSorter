@@ -72,18 +72,12 @@
 }
 
 :root[data-material='acrylic'] .app-bg {
+  /* 3.5：底板只留两团极淡的色相，用来把 DWM 给的偏暖 tint 拉回冷调。
+     原来那层 linear-gradient(白, mist) 已经删掉 —— 它和 .glass 的染色叠在一起，
+     既把桌面糊白，又让"玻璃厚度"滑块要同时改两个地方。现在厚度只有一个旋钮。 */
   background:
-    radial-gradient(78% 62% at 12% -6%, rgba(168, 188, 228, 0.3), transparent 62%),
-    radial-gradient(72% 58% at 94% 96%, rgba(184, 178, 224, 0.24), transparent 60%),
-    /* 雾底用冷白不用纯白：同样的 alpha，纯白只是"更奶"，
-       冷白才把透出来的绿/暖按回雾蓝灰。alpha 走 --mist，设置里可调。 */
-    /* 雾底系数 0.62：3.2 是整份铺上去（14% → 14% 白），和新的着色层叠起来
-       就把桌面糊成一片奶白。玻璃自己已经有 6%~22% 的着色，雾只需要把色温按回来。 */
-    linear-gradient(
-      180deg,
-      rgba(233, 238, 247, calc(var(--mist) * 0.005)),
-      rgba(228, 235, 245, calc(var(--mist) * 0.005))
-    );
+    radial-gradient(78% 62% at 12% -6%, rgba(168, 188, 228, 0.22), transparent 62%),
+    radial-gradient(72% 58% at 94% 96%, rgba(184, 178, 224, 0.18), transparent 60%);
 }
 
 :root[data-material='acrylic'] .app-bg::after {
@@ -92,76 +86,20 @@
 
 :root[data-material='acrylic'][data-theme='dark'] .app-bg {
   background:
-    radial-gradient(70% 58% at 10% -8%, rgba(92, 108, 152, 0.28), transparent 62%),
-    radial-gradient(66% 54% at 96% 98%, rgba(116, 102, 154, 0.22), transparent 60%),
-    linear-gradient(
-      180deg,
-      rgba(233, 238, 247, calc(var(--mist) * 0.004)),
-      rgba(228, 235, 245, calc(var(--mist) * 0.004))
-    );
-}
-
-:root[data-material='acrylic'][data-theme='dark'] .app-bg::after {
-  opacity: 0.06;
+    radial-gradient(70% 58% at 10% -8%, rgba(92, 108, 152, 0.22), transparent 62%),
+    radial-gradient(66% 54% at 96% 98%, rgba(116, 102, 154, 0.18), transparent 60%);
 }
 
 /**
- * 分层：同一档材质下，「越需要读字的地方越实」
+ * 3.5：这三块面板不再各自写死底色。
  *
- * 通透是手段不是目的。侧栏只有导航词、标题栏只有一行字，可以极透；
- * 文件列表要认文件名、详情栏要读正文，就必须压住背后的亮部。
- * 全界面一个透明度 = 既不够通透，又不够清楚。
+ * 3.2 在这里给 .sidebar/.main/.details 分别写了 5%/8%/12% 的白（深色一套、dock 再一套），
+ * 结果同一个界面里三块玻璃的厚度不一样，换主题时还会有一块没跟上 —— 用户看到的就是
+ * "一个模块浅、另一个模块深"。现在底色统一交给 material.css 的 .glass，
+ * 这里只保留一句说明，避免以后又有人往这儿加。
  */
-:root[data-material='acrylic'] .sidebar {
-  background: rgba(255, 255, 255, 0.05);
-}
-:root[data-material='acrylic'] .main {
-  background: rgba(255, 255, 255, 0.08);
-}
-:root[data-material='acrylic'] .details {
-  background: rgba(255, 255, 255, 0.12);
-}
 
-:root[data-material='acrylic'][data-theme='dark'] .sidebar {
-  background: rgba(255, 255, 255, 0.03);
-}
-:root[data-material='acrylic'][data-theme='dark'] .main {
-  background: rgba(255, 255, 255, 0.05);
-}
-:root[data-material='acrylic'][data-theme='dark'] .details {
-  background: rgba(255, 255, 255, 0.09);
-}
 
-/* 任务栏悬浮挂件：异形小窗，最该有"一片玻璃贴在桌沿"的感觉。
-   三块统一再降一档，描边也跟着淡掉 —— 小窗上 15% 的白边已经能看清，
-   再浓就像描了个边。 */
-:root[data-material='acrylic'][data-mode='dock'] .sidebar,
-:root[data-material='acrylic'][data-mode='dock'] .main,
-:root[data-material='acrylic'][data-mode='dock'] .details,
-:root[data-material='acrylic'][data-mode='dock'] .titlebar,
-:root[data-material='acrylic'][data-mode='dock'] .toolbar,
-:root[data-material='acrylic'][data-mode='dock'] .statusbar {
-  background: rgba(255, 255, 255, 0.03);
-}
-
-:root[data-material='acrylic'][data-mode='dock'][data-theme='dark'] .sidebar,
-:root[data-material='acrylic'][data-mode='dock'][data-theme='dark'] .main,
-:root[data-material='acrylic'][data-mode='dock'][data-theme='dark'] .details,
-:root[data-material='acrylic'][data-mode='dock'][data-theme='dark'] .titlebar,
-:root[data-material='acrylic'][data-mode='dock'][data-theme='dark'] .toolbar,
-:root[data-material='acrylic'][data-mode='dock'][data-theme='dark'] .statusbar {
-  background: rgba(255, 255, 255, 0.02);
-}
-
-:root[data-material='acrylic'][data-mode='dock'] .glass {
-  border-color: rgba(255, 255, 255, 0.1);
-  box-shadow: 0 1px 2px rgba(40, 52, 76, 0.03), 0 4px 14px rgba(40, 52, 76, 0.05);
-}
-
-:root[data-material='acrylic'][data-mode='dock'][data-theme='dark'] .glass {
-  border-color: rgba(255, 255, 255, 0.1);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 6px 18px rgba(0, 0, 0, 0.26);
-}
 
 /**
  * 液态玻璃 = 缘 + 面，两件事分开做
@@ -252,10 +190,11 @@
  * 虚拟滚动的长列表里会直接掉帧。
  */
 :root[data-material='acrylic'] {
-  /* 白托底只留一点点：填料已经把表面推到浅色，托太狠反而把深色字洗淡 */
+  /* 白托底只留一点点：玻璃本身已经很淡，托太狠会把深色字洗淡 */
   --text-lift: 0 1px 1px rgba(255, 255, 255, 0.22);
-  --ink-3: #5f6675;
-  --ink-4: #7e8593;
+  /* ink-3 / ink-4 不在这里定义。这里曾经把两者写死成 #5f6675 / #7e8593，
+     而且本文件加载在 tokens.css 之后 —— 于是 3.4/3.5 在 tokens 里调深次级文字
+     全部无效，表头和说明文字一直是"灰到看不见"。字体颜色只留 tokens 一处。 */
 }
 :root[data-material='acrylic'][data-theme='dark'] {
   --text-lift: 0 1px 2px rgba(0, 0, 0, 0.45);

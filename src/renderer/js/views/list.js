@@ -99,7 +99,7 @@ export function rowHtml(entry, options = {}) {
     .map((tag) => `<span class="tag-dot" data-color="${esc(tag.color)}" title="${esc(tag.name)}"></span>`)
     .join('');
 
-  return `<div class="file-row${selected}${checked}${favorite}" data-path="${esc(entry.path)}" data-kind="row">
+  return `<div class="file-row${selected}${checked}${favorite}" data-path="${esc(entry.path)}" data-kind="row" draggable="true">
     <div class="file-row__check"><span class="checkbox${options.checked ? ' is-on' : ''}" data-check="${esc(entry.path)}"></span></div>
     <div class="file-row__name">
       <span class="file-ico" data-tone="${tone}">${thumb}</span>
@@ -139,7 +139,7 @@ export function gridCardHtml(entry, options = {}) {
     .map((tag) => `<span class="tag-dot" data-color="${esc(tag.color)}"></span>`)
     .join('');
 
-  return `<div class="grid-card${selected}${checked}${favorite}" data-path="${esc(entry.path)}" data-kind="card">
+  return `<div class="grid-card${selected}${checked}${favorite}" data-path="${esc(entry.path)}" data-kind="card" draggable="true">
     <span class="grid-card__check"><span class="checkbox${options.checked ? ' is-on' : ''}" data-check="${esc(entry.path)}"></span></span>
     <button class="grid-card__fav${options.favorite ? ' is-on' : ''}" data-act="fav" title="${t('menu.favorite')}">${icon(options.favorite ? 'star-fill' : 'star', 13)}</button>
     <div class="grid-card__thumb file-ico" data-tone="${tone}">${thumb}</div>

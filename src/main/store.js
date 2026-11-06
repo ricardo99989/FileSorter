@@ -41,11 +41,12 @@ const DEFAULT_SETTINGS = Object.freeze({
   /** 鼠标光影跟随 */
   cursorGlow: true,
   /**
-   * 玻璃雾度（0~30，百分比）。
-   * acrylic 的 tint 由系统绘制，压不过桌面原本的颜色 —— 窗口直接放在绿色壁纸上就会发绿。
-   * 这一档是应用自己能控制的那部分：调高=色温稳（雾蓝灰），调低=更透（跟着桌面变色）。
+   * 玻璃厚度（0~30）。
+   * 0 = 完全通透：只剩 backdrop 模糊和边光，桌面颜色原样透上来。
+   * 调高会在玻璃上加一层极淡的白，用于"背后太花、字看不清"的救急。
+   * 3.5 起默认 0 —— 用户要的就是通透优先。
    */
-  mist: 14,
+  mist: 0,
 
   /* ---------------- 窗口 ---------------- */
   /** 显示模式：window 窗口 / sidebar 侧边栏 / dock 任务栏悬浮 */
@@ -64,6 +65,8 @@ const DEFAULT_SETTINGS = Object.freeze({
   autostart: false,
   /** 学习模式：把「笔记/作业/考试/课件」类文件名归到「学习」 */
   learnMode: false,
+  /** 新手引导是否已看过 */
+  onboarded: false,
 
   /* ---------------- 监听与定时 ---------------- */
   /** 实时监听当前目录（chokidar 原生事件，不轮询） */
@@ -253,6 +256,7 @@ function createStore(baseDir) {
 
     if (typeof raw.autostart === 'boolean') next.autostart = raw.autostart;
     if (typeof raw.learnMode === 'boolean') next.learnMode = raw.learnMode;
+    if (typeof raw.onboarded === 'boolean') next.onboarded = raw.onboarded;
     // 收藏只留绝对路径，去重、限长：这是个只增不减的列表，跑几年也不该把设置撑爆
     if (Array.isArray(raw.favorites)) {
       const seen = new Set();

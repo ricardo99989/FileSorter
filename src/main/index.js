@@ -24,6 +24,8 @@ const isDev = process.argv.includes('--dev');
 const captureArg = process.argv.find((arg) => arg.startsWith('--capture='));
 /** 冒烟脚本要访问的测试目录，由环境变量传入，避免把本机路径写进仓库 */
 const smokeDir = process.env.SMOKE_DIR || '';
+/** 性能测试目录（3000 个文件），没给就退回 smokeDir */
+const smokePerf = process.env.SMOKE_PERF || smokeDir;
 
 /** @type {BrowserWindow | null} */
 let mainWindow = null;
@@ -754,6 +756,9 @@ function attachSmokeProbe(win) {
           ),
           mainW: Math.round(main.getBoundingClientRect().width),
           mainOverflow: main.getBoundingClientRect().right > window.innerWidth + 1,
+          headColor: getComputedStyle(document.querySelector('.tablehead')).color,
+          headOpacity: getComputedStyle(document.querySelector('.tablehead')).opacity,
+          ink3: getComputedStyle(document.documentElement).getPropertyValue('--ink-3').trim(),
         }));
       })()`,
       sidemode: `window.filesorter.setMode('sidebar')`,
@@ -780,6 +785,67 @@ function attachSmokeProbe(win) {
             return b ? [b.clientHeight, b.scrollHeight] : null;
           })(),
         }));
+      })()`,
+      /* 3.5 回归：新手引导、拖拽归类、搜索耗时 */
+      v35: `(async () => {
+        const out = {};
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+        await wait(300);
+        out.onboard = Boolean(document.querySelector('.onboard'));
+        document.getElementById('onboardSkip')?.click();
+        await wait(300);
+        out.onboardClosed = !document.querySelector('.onboard');
+
+        // 搜索耗时（3000 个文件的目录）
+        await window.__lens.navigate(${JSON.stringify(smokePerf)});
+        await wait(700);
+        const t0 = performance.now();
+        const res = await window.filesorter.search(${JSON.stringify(smokePerf)}, 'report');
+        out.searchMs = Math.round(performance.now() - t0);
+        out.searchHits = res.ok ? res.data.hits.length : -1;
+
+        // 拖拽：只验证拖起时是否带上路径（don't 真的 drop —— 会移动演示文件）
+        await window.__lens.navigate(${JSON.stringify(smokeDir)});
+        await wait(700);
+        const rows = [...document.querySelectorAll('.file-row')];
+        out.rows = rows.length;
+        const dt = new DataTransfer();
+        rows[0]?.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
+        out.dragPaths = JSON.parse(dt.getData('text/plain') || '[]').length;
+        out.dropping = document.getElementById('wheel').classList.contains('is-dropping');
+        rows[0]?.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: dt }));
+        out.droppingEnd = document.getElementById('wheel').classList.contains('is-dropping');
+        console.log('V35 ' + JSON.stringify(out));
+      })()`,
+      /* 诊断：紧凑模式是否丢失当前目录、弹窗底色是否跟随主题 */
+      diag: `(async () => {
+        const out = {};
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+        await window.__lens.navigate(${JSON.stringify(smokeDir)});
+        await wait(800);
+        out.cwdWindow = window.__lens.state.cwd;
+        await window.filesorter.setMode('dock');
+        await wait(900);
+        out.cwdDock = window.__lens.state.cwd;
+        out.mode = document.documentElement.dataset.mode;
+        out.rowsDock = document.querySelectorAll('.file-row').length;
+        await window.filesorter.setMode('window');
+        await wait(900);
+        document.getElementById('btnSettings').click();
+        await wait(600);
+        const modal = document.querySelector('.modal');
+        const ms = getComputedStyle(modal);
+        out.theme = document.documentElement.dataset.theme;
+        out.lum = document.documentElement.dataset.lum || null;
+        out.mat = document.documentElement.dataset.material;
+        out.modalBg = ms.backgroundColor;
+        out.modalFilter = ms.backdropFilter;
+        out.readSheet = getComputedStyle(document.documentElement).getPropertyValue('--read-sheet-strong').trim();
+        out.mainBg = getComputedStyle(document.querySelector('.main')).backgroundColor;
+        out.mainImage = getComputedStyle(document.querySelector('.main')).backgroundImage.slice(0, 60);
+        out.mainFilter = getComputedStyle(document.querySelector('.main')).backdropFilter;
+        out.glassAfter = getComputedStyle(document.querySelector('.main'), '::after').backdropFilter;
+        console.log('DIAG ' + JSON.stringify(out));
       })()`,
       /* 预览浮层的静态取证：打开后不关，留给截图 */
       previewshot: `(async () => {
