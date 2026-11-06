@@ -5,7 +5,7 @@ const fsSync = require('node:fs');
 const fs = require('node:fs/promises');
 const {
   app, BrowserWindow, ipcMain, dialog, shell, clipboard, Menu, Tray,
-  nativeTheme, nativeImage, Notification, screen,
+  nativeTheme, nativeImage, Notification, screen, desktopCapturer,
 } = require('electron');
 
 const { createStore } = require('./store');
@@ -136,6 +136,93 @@ function applyMode(mode, { silent = false } = {}) {
   if (!silent) {
     mainWindow.webContents.send('win:modeChanged', { mode, side: prefs.sidebarSide });
   }
+  // 换位置就等于换了背后的桌面，重新采一次亮度（320ms 后再采，等 DWM 把 tint 重画完）
+  clearTimeout(backdropTimer);
+  backdropTimer = setTimeout(() => sampleBackdrop(true), 320);
+}
+
+/* --------------------------- 桌面亮度采样 --------------------------- */
+
+/**
+ * 玻璃材质的着色和文字颜色要跟着**背后的桌面**走，而不是跟着主题走：
+ * 浅色主题 + 深色壁纸 = 深色字压深色底，一个字都看不清。
+ *
+ * 做法：用 desktopCapturer 取一张 192px 宽的桌面缩略图，统计窗口矩形以外区域的
+ * 平均亮度（Rec.709）和亮度标准差。窗口自己那部分要扣掉，否则采样到的是"我们
+ * 自己的玻璃"，会形成 亮→翻暗→更暗 的正反馈。
+ *
+ * 成本：一次 ~10ms + 一张 192×108 缩略图，只在开窗、切模式、移动窗口后触发，
+ * 并且 1.2s 内不重复采样。
+ */
+let backdropTimer = null;
+let backdropSampledAt = 0;
+
+async function sampleBackdrop(force = false) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const now = Date.now();
+  if (!force && now - backdropSampledAt < 1200) return;
+  backdropSampledAt = now;
+
+  try {
+    const bounds = mainWindow.getBounds();
+    const display = screen.getDisplayMatching(bounds);
+    const thumbW = 192;
+    const thumbH = Math.max(
+      32,
+      Math.round((thumbW * display.size.height) / Math.max(1, display.size.width)),
+    );
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: thumbW, height: thumbH },
+    });
+    const source =
+      sources.find((item) => String(item.display_id) === String(display.id)) || sources[0];
+    if (!source || source.thumbnail.isEmpty()) return;
+
+    const size = source.thumbnail.getSize();
+    const bitmap = source.thumbnail.toBitmap(); // BGRA
+    const sx = size.width / Math.max(1, display.size.width);
+    const sy = size.height / Math.max(1, display.size.height);
+    const wx0 = (bounds.x - display.bounds.x) * sx;
+    const wy0 = (bounds.y - display.bounds.y) * sy;
+    const wx1 = wx0 + bounds.width * sx;
+    const wy1 = wy0 + bounds.height * sy;
+
+    const stat = (skipWindow) => {
+      let sum = 0;
+      let sumSq = 0;
+      let count = 0;
+      for (let y = 0; y < size.height; y += 1) {
+        for (let x = 0; x < size.width; x += 1) {
+          if (skipWindow && x >= wx0 && x < wx1 && y >= wy0 && y < wy1) continue;
+          const i = (y * size.width + x) * 4;
+          // Rec.709：人眼对绿最敏感，直接用 RGB 平均会把蓝天算得偏亮
+          const lum = (0.2126 * bitmap[i + 2] + 0.7152 * bitmap[i + 1] + 0.0722 * bitmap[i]) / 255;
+          sum += lum;
+          sumSq += lum * lum;
+          count += 1;
+        }
+      }
+      if (!count) return null;
+      const mean = sum / count;
+      const variance = Math.max(0, sumSq / count - mean * mean);
+      return { mean, std: Math.sqrt(variance), count };
+    };
+
+    // 窗口铺满整屏（侧栏/最大化）时窗口外没剩几个像素，那就整屏取样
+    let result = stat(true);
+    const total = size.width * size.height;
+    if (!result || result.count < total * 0.08) result = stat(false);
+    if (!result) return;
+
+    mainWindow.webContents.send('win:backdrop', {
+      luminance: Number(result.mean.toFixed(3)),
+      // 0.18 是「纯色壁纸 → 满屏图标」的实测跨度，归一到 0~1 给 CSS 当插值因子
+      busy: Number(Math.min(1, result.std / 0.18).toFixed(3)),
+    });
+  } catch (err) {
+    /* 采样失败不影响任何主流程：CSS 里 --bg-busy / --bg-lum 都有兜底值 */
+  }
 }
 
 function createWindow() {
@@ -147,6 +234,10 @@ function createWindow() {
   const mode = MODE_SPEC[forcedMode] ? forcedMode : MODE_SPEC[prefs.mode] ? prefs.mode : 'window';
   const spec = MODE_SPEC[mode];
   useAcrylic = detectAcrylic();
+
+  // 冒烟专用：强制走另一条材质路径，用来同时截 acrylic 与 solid 两套图
+  const materialArg = process.argv.find((a) => a.startsWith('--smoke-material='));
+  if (isSmoke && materialArg) useAcrylic = materialArg.split('=')[1] !== 'solid';
 
   /**
    * 冒烟截图专用：垫一张合成桌面。
@@ -213,7 +304,16 @@ function createWindow() {
     else mainWindow.show();
     // 恢复上次的窗口形态（尺寸记忆已经存过，这里只摆位置）
     if (mode !== 'window') applyMode(mode, { silent: true });
+    setTimeout(() => sampleBackdrop(true), 600);
   });
+
+  // 窗口挪动/改尺寸就是换了背后的桌面：停稳 700ms 再采样一次
+  const queueBackdrop = () => {
+    clearTimeout(backdropTimer);
+    backdropTimer = setTimeout(() => sampleBackdrop(), 700);
+  };
+  mainWindow.on('move', queueBackdrop);
+  mainWindow.on('resize', queueBackdrop);
 
   // 外链一律交给系统浏览器，窗口本身不导航
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -591,15 +691,100 @@ function attachSmokeProbe(win) {
       })()`,
       metrics: `(() => {
         const vp = document.getElementById('viewport');
+        const main = document.querySelector('.main');
         console.log('METRICS ' + JSON.stringify({
           clientWidth: vp.clientWidth,
+          innerW: window.innerWidth,
+          dpr: window.devicePixelRatio,
           rows: document.querySelectorAll('.file-row').length,
+          cards: document.querySelectorAll('.grid-card').length,
           mode: document.documentElement.dataset.mode,
+          lum: document.documentElement.dataset.lum,
+          mat: document.documentElement.dataset.material,
+          mainW: Math.round(main.getBoundingClientRect().width),
+          mainOverflow: main.getBoundingClientRect().right > window.innerWidth + 1,
         }));
       })()`,
       sidemode: `window.filesorter.setMode('sidebar')`,
       dockmode: `window.filesorter.setMode('dock')`,
       windowmode: `window.filesorter.setMode('window')`,
+      /* 回归：紧凑模式里设置入口还在不在，弹窗能不能在 460×340 里铺开 */
+      compact_settings: `(async () => {
+        await window.filesorter.setMode('dock');
+        await new Promise((r) => setTimeout(r, 800));
+        const gear = document.getElementById('btnCompactSettings');
+        const back = document.getElementById('btnCompactExpand');
+        gear.click();
+        await new Promise((r) => setTimeout(r, 600));
+        const modal = document.querySelector('.modal');
+        const rect = modal ? modal.getBoundingClientRect() : null;
+        console.log('COMPACT ' + JSON.stringify({
+          mode: document.documentElement.dataset.mode,
+          gearVisible: !!gear.offsetParent,
+          backVisible: !!back.offsetParent,
+          modalOpen: !!modal && modal.classList.contains('is-open'),
+          modal: rect ? [Math.round(rect.width), Math.round(rect.height)] : null,
+          bodyScroll: (() => {
+            const b = document.getElementById('settingsBody');
+            return b ? [b.clientHeight, b.scrollHeight] : null;
+          })(),
+        }));
+      })()`,
+      /* 端到端：悬浮模式 → 设置弹窗 → 点「窗口」分段 → 回到窗口模式 */
+      compact_switch: `(async () => {
+        await window.filesorter.setMode('dock');
+        await new Promise((r) => setTimeout(r, 800));
+        document.getElementById('btnCompactSettings').click();
+        await new Promise((r) => setTimeout(r, 600));
+        const seg = document.querySelector('[data-segment=\"mode\"] [data-value=\"window\"]');
+        if (!seg) {
+          console.log('COMPACTSWITCH ' + JSON.stringify({ error: '找不到显示模式分段' }));
+          return;
+        }
+        seg.click();
+        await new Promise((r) => setTimeout(r, 1600));
+        const app = document.querySelector('.app').getBoundingClientRect();
+        console.log('COMPACTSWITCH ' + JSON.stringify({
+          mode: document.documentElement.dataset.mode,
+          app: [Math.round(app.width), Math.round(app.height)],
+          modalOpen: document.querySelector('.modal')?.classList.contains('is-open'),
+          overflow: document.querySelector('.main').getBoundingClientRect().right > window.innerWidth + 1,
+        }));
+      })()`,
+      /* 动画中途取证：把时长拉长到 2.4s，截图时正卡在展开的中段 */
+      mode_anim: `(async () => {
+        document.documentElement.style.setProperty('--mode-dur', '4200ms');
+        // 先把 store 和窗口都摆到 dock：--smoke-mode 只改窗口形状，不改 store，
+        // 不先同步一次，界面会以为自己在 window 模式，点"回到窗口"直接空转。
+        await window.filesorter.setMode('dock');
+        await new Promise((r) => setTimeout(r, 800));
+        document.getElementById('btnCompactExpand').click();
+        console.log('MODEANIM ' + JSON.stringify({
+          from: document.documentElement.dataset.modeFrom,
+          to: document.documentElement.dataset.modeTo,
+        }));
+      })()`,
+      /* 回归：从悬浮模式一键回窗口模式（走预备动作 + 入场动画那条路） */
+      compact_back: `(async () => {
+        await window.filesorter.setMode('dock');
+        await new Promise((r) => setTimeout(r, 700));
+        document.getElementById('btnCompactExpand').click();
+        await new Promise((r) => setTimeout(r, 1200));
+        const r = document.querySelector('.app').getBoundingClientRect();
+        const read = () => ({
+          mode: document.documentElement.dataset.mode,
+          cls: document.documentElement.className,
+          anim: getComputedStyle(document.querySelector('.app')).animationName,
+        });
+        console.log('COMPACTBACK ' + JSON.stringify({
+          mode: document.documentElement.dataset.mode,
+          app: [Math.round(r.width), Math.round(r.height)],
+          enterCls: document.documentElement.classList.contains('mode-enter'),
+          at1200: read(),
+        }));
+        await new Promise((res) => setTimeout(res, 600));
+        console.log('COMPACTBACK2 ' + JSON.stringify(read()));
+      })()`,
       /* 端到端：进入临时目录 → 打开整理预览 → 取消勾选第一个分组 → 真正执行 */
       organize_run: `(async () => {
         await window.__lens.navigate(${JSON.stringify(smokeDir)});
@@ -771,6 +956,7 @@ app.whenReady().then(async () => {
     scheduler,
     getWindow: () => mainWindow,
     setMode: (mode) => applyMode(mode),
+    sampleBackdrop: (force) => sampleBackdrop(force),
     pluginsDir: pluginsDir(),
     runScheduledTidy,
     notify,

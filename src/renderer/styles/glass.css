@@ -77,10 +77,12 @@
     radial-gradient(72% 58% at 94% 96%, rgba(184, 178, 224, 0.24), transparent 60%),
     /* 雾底用冷白不用纯白：同样的 alpha，纯白只是"更奶"，
        冷白才把透出来的绿/暖按回雾蓝灰。alpha 走 --mist，设置里可调。 */
+    /* 雾底系数 0.62：3.2 是整份铺上去（14% → 14% 白），和新的着色层叠起来
+       就把桌面糊成一片奶白。玻璃自己已经有 6%~22% 的着色，雾只需要把色温按回来。 */
     linear-gradient(
       180deg,
-      rgba(233, 238, 247, calc(var(--mist) / 100)),
-      rgba(228, 235, 245, calc(var(--mist) / 100))
+      rgba(233, 238, 247, calc(var(--mist) * 0.005)),
+      rgba(228, 235, 245, calc(var(--mist) * 0.005))
     );
 }
 
@@ -94,8 +96,8 @@
     radial-gradient(66% 54% at 96% 98%, rgba(116, 102, 154, 0.22), transparent 60%),
     linear-gradient(
       180deg,
-      rgba(233, 238, 247, calc(var(--mist) / 130)),
-      rgba(228, 235, 245, calc(var(--mist) / 130))
+      rgba(233, 238, 247, calc(var(--mist) * 0.004)),
+      rgba(228, 235, 245, calc(var(--mist) * 0.004))
     );
 }
 

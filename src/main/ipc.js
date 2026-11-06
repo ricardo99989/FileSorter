@@ -52,7 +52,7 @@ const wrap = (handler) => async (event, payload) => {
 function registerIpc(ctx) {
   const {
     ipcMain, dialog, shell, clipboard, app, store, undo, tags, watcher,
-    getWindow, setMode, pluginsDir, runScheduledTidy, scheduler, notify,
+    getWindow, setMode, sampleBackdrop, pluginsDir, runScheduledTidy, scheduler, notify,
   } = ctx;
 
   /** 拿到当前窗口的发送器，窗口没了就静默丢弃 */
@@ -673,10 +673,18 @@ function registerIpc(ctx) {
     }),
   );
 
+  /* 渲染进程开机后主动要一次桌面亮度，避免依赖主进程那一次可能早于订阅的推送 */
+  ipcMain.handle(
+    'win:backdrop',
+    wrap(async () => {
+      sampleBackdrop?.(true);
+      return { ok: true };
+    }),
+  );
+
   ipcMain.handle(
     'win:setSide',
-    wrap(async (payload) => {
-      const side = payload.side === 'right' ? 'right' : 'left';
+    wrap(async (payload) => {      const side = payload.side === 'right' ? 'right' : 'left';
       await store.save({ sidebarSide: side });
       if (store.get().mode === 'sidebar') setMode?.('sidebar');
       return { side };

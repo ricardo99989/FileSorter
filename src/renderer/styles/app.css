@@ -959,11 +959,19 @@
     margin-right var(--t-base) var(--ease);
 }
 
+/**
+ * 折叠详情栏。
+ *
+ * 原先用 `width: 0` + `margin-right: -318px` 把它推出屏幕，看着是"收起来了"，
+ * 但负外边距会让弹性容器把多出来的空间分给 .main —— 最后一项在 .main **之后**，
+ * 于是 .main 反而变宽、把内容顶出窗口右缘（1360 的窗口里 .main 长到 1415，
+ * 最后一列卡片被硬生生切掉）。
+ *
+ * 折叠就是"不占位"，直接 display:none 最老实：不参与弹性布局，也就没有可分配的空间。
+ * 代价是收起时没有宽度过渡 —— 用正确布局换一个 190ms 的动画，值。
+ */
 .details.is-collapsed {
-  width: 0;
-  opacity: 0;
-  margin-right: calc(var(--details-w) * -1);
-  pointer-events: none;
+  display: none;
 }
 
 .details__scroll {
@@ -1186,6 +1194,129 @@
   height: 38px;
 }
 
+/* 紧凑控件：只在紧凑模式出现，窗口模式下侧栏本来就有设置入口 */
+.compactbar {
+  display: none;
+  gap: 2px;
+  -webkit-app-region: no-drag;
+}
+
+:root[data-mode='sidebar'] .compactbar,
+:root[data-mode='dock'] .compactbar {
+  display: flex;
+}
+
+/* 悬浮挂件只有 460 宽，标题栏里 meta 那行字必须先让位：
+   路径在面包屑里已经有了，重复一遍只会把按钮挤出去 */
+:root[data-mode='dock'] .titlebar__meta {
+  display: none;
+}
+
+:root[data-mode='sidebar'] .titlebar__meta {
+  max-width: 24vw;
+}
+
+:root[data-mode='dock'] .titlebar__brand span {
+  display: none;
+}
+
+/**
+ * 紧凑窗口里的弹窗：默认 860×660 在 460×340 的挂件里会溢出成一条缝。
+ * 直接铺满可用区域，靠内部滚动来看内容 —— 设置里的模式切换是唯一的返回入口，
+ * 必须保证它在任何尺寸下都点得到。
+ */
+:root[data-mode='sidebar'] .modal,
+:root[data-mode='dock'] .modal {
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  width: auto;
+  height: auto;
+  max-width: none;
+  transform: translateY(8px) scale(0.99);
+}
+
+:root[data-mode='sidebar'] .modal.is-open,
+:root[data-mode='dock'] .modal.is-open {
+  transform: none;
+}
+
+:root[data-mode='dock'] .panel__head {
+  padding: 14px 16px 10px;
+}
+
+:root[data-mode='dock'] .panel__body {
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+/**
+ * 设置面板在 460 宽的挂件里必须改成竖向排布：
+ * 原本「标签在左、控件在右」是给 860 宽弹窗设计的，挤到 380 宽时
+ * 右侧的滑块/下拉会被推出可视区，只看得见左边一列字。
+ */
+:root[data-mode='sidebar'] .modal .setting,
+:root[data-mode='dock'] .modal .setting {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 7px;
+}
+
+:root[data-mode='sidebar'] .modal .setting__control,
+:root[data-mode='dock'] .modal .setting__control {
+  width: 100%;
+}
+
+:root[data-mode='sidebar'] .modal .setting__control > .input,
+:root[data-mode='dock'] .modal .setting__control > .input {
+  flex: 1;
+}
+
+/* 紧凑窗口里弹窗铺满整块玻璃，背后是密集的文件列表 —— 读区必须更实一档 */
+:root[data-mode='sidebar'] .modal,
+:root[data-mode='dock'] .modal {
+  background: var(--read-sheet-solid, rgba(255, 255, 255, 0.96));
+}
+
+:root[data-theme='dark'][data-mode='sidebar'] .modal,
+:root[data-theme='dark'][data-mode='dock'] .modal {
+  background: rgba(14, 16, 22, 0.96);
+}
+
+/* 分段控件在窄窗里等分铺满，别留半截 */
+:root[data-mode='sidebar'] .modal .segment,
+:root[data-mode='dock'] .modal .segment {
+  width: 100% !important;
+}
+
+:root[data-mode='sidebar'] .modal .segment button,
+:root[data-mode='dock'] .modal .segment button {
+  flex: 1;
+  min-width: 0;
+  padding: 0 4px;
+}
+
+:root[data-mode='sidebar'] .modal .set-tabs,
+:root[data-mode='dock'] .modal .set-tabs {
+  padding: 4px 10px 0;
+}
+
+:root[data-mode='sidebar'] .modal .panel__body,
+:root[data-mode='dock'] .modal .panel__body {
+  padding: 0 14px 16px;
+}
+
+:root[data-mode='sidebar'] .modal .section,
+:root[data-mode='dock'] .modal .section {
+  margin-bottom: 12px;
+}
+
+:root[data-mode='sidebar'] .modal .panel__head,
+:root[data-mode='dock'] .modal .panel__head {
+  padding: 12px 14px 8px;
+}
+
 /* 悬浮挂件是异形小窗，最大化没有意义，去掉省得误触 */
 :root[data-mode='dock'] .wincontrols [data-win='maximize'] {
   display: none;
@@ -1224,7 +1355,9 @@
   gap: 6px;
 }
 
-:root[data-mode='dock'] .segment,
+/* 只收工具栏里的分段控件；设置弹窗里的「显示模式」分段必须留着，
+   那是紧凑模式下切回窗口模式的入口之一 */
+:root[data-mode='dock'] .toolbar .segment,
 :root[data-mode='dock'] #btnDetail {
   display: none;
 }
@@ -1264,7 +1397,8 @@
  * 顺序讲究：先收「能不用就不用」的，最后才动搜索框——搜索是高频操作。
  */
 @media (max-width: 720px) {
-  .segment,
+  /* 只收工具栏里的视图切换；设置弹窗的分段控件是功能入口，不能一起收掉 */
+  .toolbar .segment,
   #btnDetail {
     display: none;
   }
@@ -1617,18 +1751,139 @@
   }
 }
 
-/* 模式切换：三块面板错开 40ms 落位，比整屏硬切柔和 */
-html.mode-anim .sidebar,
-html.mode-anim .main,
-html.mode-anim .details {
-  animation: mode-in var(--t-mode) var(--ease-out) backwards;
+/**
+ * 模式切换动效
+ *
+ * 参考的是那篇「12 项动效原则」里能落地的五条 —— 不是照抄，是按窗口几何变化挑的：
+ *   预备动作 Anticipation     切换前 90ms 先轻轻收一下（.mode-anticipate）
+ *   缓入缓出 Ease in/out      420ms cubic-bezier(0.16,1,0.3,1)，落定不弹
+ *   弧线 Arcs                 位移走一条带中点的弧，不是直线平移
+ *   跟随与重叠 Follow through 面板按 0/40/80ms 依次落位，尾巴拖一点
+ *   次级动作 Secondary action 一道 460ms 的高光扫过，把"窗口尺寸跳变"这一下盖住
+ *
+ * 窗口本身是瞬间改尺寸的（Electron 的 setBounds 没法逐帧补间，硬做会掉帧），
+ * 所以动画只做**内容层**：先缩一点 → 换尺寸 → 从锚点方向展开。
+ * 锚点是模式切换后视觉上"长出来"的那个角：悬浮挂件长在右下，侧栏长在屏幕左/右。
+ */
+
+html.mode-anticipate .app {
+  transform: scale(0.988);
+  opacity: 0.92;
+  transform-origin: var(--mode-origin, 50% 50%);
+  transition: transform 90ms var(--ease), opacity 90ms var(--ease);
 }
 
-html.mode-anim .sidebar { animation-delay: 0ms; }
-html.mode-anim .main { animation-delay: 40ms; }
-html.mode-anim .details { animation-delay: 80ms; }
+html.mode-enter .app {
+  transform-origin: var(--mode-origin, 50% 50%);
+  /* --mode-dur 只给冒烟调试用（放慢动画才能截到中途），正常永远是 420ms */
+  animation: mode-app-in var(--mode-dur, 420ms) var(--ease-out) both;
+}
 
-@keyframes mode-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: none; }
+/* 三块面板依次落位：先标题栏，再工具栏，最后是列表本体 */
+html.mode-enter .titlebar {
+  animation: mode-child-in calc(var(--mode-dur, 420ms) * 0.9) var(--ease-out) 0ms both;
+}
+html.mode-enter .toolbar {
+  animation: mode-child-in calc(var(--mode-dur, 420ms) * 0.9) var(--ease-out) 40ms both;
+}
+html.mode-enter .wheelbar {
+  animation: mode-child-in calc(var(--mode-dur, 420ms) * 0.9) var(--ease-out) 60ms both;
+}
+html.mode-enter .vcontent {
+  animation: mode-child-in var(--mode-dur, 420ms) var(--ease-out) 80ms both;
+}
+html.mode-enter .statusbar {
+  animation: mode-child-in calc(var(--mode-dur, 420ms) * 0.9) var(--ease-out) 120ms both;
+}
+
+/* 次级动作：一道从左下扫到右上的高光。只碰 transform/opacity，不触发重排 */
+html.mode-enter .app::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  pointer-events: none;
+  background: linear-gradient(
+    108deg,
+    transparent 38%,
+    rgba(255, 255, 255, 0.16) 48%,
+    rgba(255, 255, 255, 0.28) 50%,
+    rgba(255, 255, 255, 0.16) 52%,
+    transparent 62%
+  );
+  animation: mode-sheen calc(var(--mode-dur, 420ms) * 1.1) var(--ease-out) 40ms both;
+}
+
+@keyframes mode-app-in {
+  0% {
+    opacity: 0.35;
+    transform: translate3d(var(--mode-dx, 0px), var(--mode-dy, 10px), 0) scale(var(--mode-s0, 0.94));
+  }
+  /* 中段稍微冲过头一点再回来，位移因此走成弧线而不是直线 */
+  62% {
+    opacity: 1;
+    transform: translate3d(calc(var(--mode-dx, 0px) * -0.08), calc(var(--mode-dy, 10px) * -0.09), 0)
+      scale(1.004);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes mode-child-in {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes mode-sheen {
+  0% {
+    opacity: 0;
+    transform: translateX(-24%);
+  }
+  22% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(24%);
+  }
+}
+
+/* 各模式的锚点和入场方向：从"将要长出来的那一角"展开 */
+:root[data-mode-to='dock'] {
+  --mode-origin: 100% 100%;
+  --mode-dx: 18px;
+  --mode-dy: 14px;
+  --mode-s0: 0.9;
+}
+
+:root[data-mode-to='sidebar'] {
+  --mode-origin: 0% 50%;
+  --mode-dx: -14px;
+  --mode-dy: 0px;
+  --mode-s0: 0.96;
+}
+
+:root[data-mode-to='sidebar'][data-side='right'] {
+  --mode-origin: 100% 50%;
+  --mode-dx: 14px;
+}
+
+:root[data-mode-to='window'] {
+  --mode-origin: 50% 50%;
+  --mode-dx: 0px;
+  --mode-dy: 8px;
+  --mode-s0: 0.972;
+}
+
+/* 进入紧凑模式时锚点在下/侧边，所以收起方向反过来 */
+:root[data-mode-from='window'][data-mode-to='dock'] {
+  --mode-s0: 0.88;
 }

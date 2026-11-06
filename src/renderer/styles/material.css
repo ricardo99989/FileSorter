@@ -1,0 +1,166 @@
+/**
+ * material.css — 玻璃材质 3.3
+ *
+ * 六步，顺序就是光走过来的顺序：
+ *   1. 投影    —— 卡片先"落"在桌面上，体积感来自接触影
+ *   2. 模糊提亮 —— blur(2px) + saturate(180%) + brightness(1.06)
+ *   3. 边缘折射 —— 边宽 44px，越靠边缘背景向内偏得越多，中间平整；红蓝分离出 15% 色散
+ *   4. 着色    —— 一层半透明色，透明度跟着背景复杂度走（--bg-busy）
+ *   5. 边缘光  —— 左上、右下各一道，再向内收一道
+ *   6. 文字着色 —— 浅玻璃正片叠底、深玻璃叠加提亮
+ *
+ * 关于「折射」的物理边界（重要，别再走回头路）：
+ *   Chromium 的 backdrop-filter 只能采样**页面自己画的东西**。窗口外的桌面
+ *   由 DWM 绘制，CSS 看不见、也折不弯 —— 这不是写法问题，是进程边界。
+ *   所以分两条路：
+ *     · solid 档（Win10 / 非 Windows）：玻璃后面是自己画的 .app-bg，有起伏可折。
+ *       边缘透镜用「外扩采样 + 边缘蒙版」做真位移，采到的是面板外 9px 的像素，
+ *       画回原位就等于向内偏 —— 这才是真折射。
+ *     · acrylic 档（Win11）：桌面在 DWM 那一侧，折不弯。改用**光学近似**：
+ *       边缘 44px 的弧形辉光 + 红蓝错位发丝线。眼睛读到的是同一件事
+ *       （玻璃有厚度、边缘在弯光），但代价是 0。
+ */
+
+/* ------------------------------ 1+2+4：面 ------------------------------ */
+
+.glass {
+  background:
+    /* 色散发丝线：红光偏折少、落在更外侧；蓝光偏折多、缩在里面 */
+    linear-gradient(180deg, var(--disp-warm) 0 1px, transparent 1px) left top / 100% 100%
+      no-repeat,
+    linear-gradient(180deg, transparent 3px, var(--disp-cool) 3px 4px, transparent 4px) left
+      top / 100% 100% no-repeat,
+    linear-gradient(90deg, var(--disp-warm) 0 1px, transparent 1px) left top / 100% 100%
+      no-repeat,
+    linear-gradient(90deg, transparent 3px, var(--disp-cool) 3px 4px, transparent 4px) left
+      top / 100% 100% no-repeat,
+    linear-gradient(270deg, var(--disp-cool) 0 1px, transparent 1px) left top / 100% 100%
+      no-repeat,
+    linear-gradient(0deg, var(--disp-warm) 0 1px, transparent 1px) left top / 100% 100%
+      no-repeat,
+    /* 上表面反光 */
+    linear-gradient(180deg, var(--sheen-a), transparent 42%),
+    /* 着色层：透明度 = 基础值 + 背景复杂度 × 幅度 */
+    rgb(var(--tint-rgb) / var(--tint-a));
+  border: 1px solid var(--glass-stroke);
+  box-shadow: var(--shadow-panel);
+  backdrop-filter: blur(var(--mat-blur)) saturate(var(--mat-sat)) brightness(var(--mat-bright));
+  -webkit-backdrop-filter: blur(var(--mat-blur)) saturate(var(--mat-sat))
+    brightness(var(--mat-bright));
+}
+
+/* --------------------- 3：边缘透镜（真折射，solid 档） --------------------- */
+
+/**
+ * 蒙版四条边带：每条都是「从边缘向内 44px 由实到虚」。
+ * 四层叠加（mask-composite: add）＝ 只有边缘一圈可见，中间完全透出。
+ */
+:root {
+  --lens-mask: linear-gradient(to right, #000 0, transparent var(--lens-edge)) left top / 100%
+      100% no-repeat,
+    linear-gradient(to left, #000 0, transparent var(--lens-edge)) left top / 100% 100%
+      no-repeat,
+    linear-gradient(to bottom, #000 0, transparent var(--lens-edge)) left top / 100% 100%
+      no-repeat,
+    linear-gradient(to top, #000 0, transparent var(--lens-edge)) left top / 100% 100%
+      no-repeat;
+}
+
+.glass::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  /* acrylic 档的光学近似：边缘一圈弧形辉光，暗示玻璃在边缘开始弯 */
+  box-shadow: inset 0 0 var(--lens-edge) calc(var(--lens-edge) * -0.42) var(--lens-glow);
+}
+
+:root[data-material='solid'] .glass::after {
+  /* 往外扩 9px 再画回原位：采到的是面板外的像素，视觉上背景就朝内偏了 */
+  inset: calc(-1 * var(--lens-shift));
+  clip-path: inset(var(--lens-shift) round var(--radius-l));
+  backdrop-filter: blur(var(--mat-blur)) saturate(var(--mat-sat)) brightness(var(--mat-bright));
+  -webkit-backdrop-filter: blur(var(--mat-blur)) saturate(var(--mat-sat))
+    brightness(var(--mat-bright));
+  -webkit-mask-image: var(--lens-mask);
+  mask-image: var(--lens-mask);
+  -webkit-mask-composite: source-over;
+  mask-composite: add;
+}
+
+/* --------------------------- 5：边缘光三档 --------------------------- */
+
+/**
+ * 左上迎光、右下背光，这是两道；第三道向内收 6px，用 outline 的负偏移画，
+ * 让玻璃看起来有"壁厚"而不是一圈描边。
+ */
+.glass::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: none;
+  opacity: 1;
+  box-shadow:
+    inset 0 1px 0 var(--edge-hi),
+    inset 1px 0 0 var(--edge-hi-2),
+    inset -1px 0 0 var(--edge-lo),
+    inset 0 -1px 0 var(--edge-lo-2);
+  outline: 1px solid var(--edge-inner);
+  outline-offset: -6px;
+}
+
+/* ------------------------------ 卡片 ------------------------------ */
+
+/**
+ * 卡片贴在 .main 这层玻璃上，不需要第二层 backdrop-filter（嵌套模糊只会更糊）。
+ * 它的体积感全靠投影：贴边的接触影 + 中层厚度 + 远层浮起，三层一起才像一片玻璃。
+ */
+.grid-card {
+  background:
+    linear-gradient(180deg, var(--sheen-a), transparent 46%),
+    rgb(var(--tint-rgb) / calc(var(--tint-a) + 0.08));
+  border: 1px solid var(--card-stroke);
+  box-shadow: var(--shadow-card);
+  transition: transform var(--t-base) var(--ease-out), box-shadow var(--t-base) var(--ease-out),
+    background var(--t-base) var(--ease), border-color var(--t-base) var(--ease);
+}
+
+.grid-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-card-hover);
+  border-color: var(--edge-inner);
+}
+
+/* 列表行的悬停底：跟卡片同一套着色，避免一块实一块透 */
+.file-row::before {
+  background: rgb(var(--tint-rgb) / calc(var(--tint-a) + 0.06));
+  border-color: var(--glass-stroke);
+}
+
+/* --------------------------- 6：文字着色 --------------------------- */
+
+/**
+ * 浅玻璃用正片叠底：字吃一点底色，像印在玻璃上而不是浮在表面；
+ * 深玻璃用叠加（screen）：字从暗底里被提亮。
+ * 只给"大字号、少字量"的标题用 —— 列表里每一行都开混合，等于给虚拟滚动
+ * 的每一行都加一个合成层，得不偿失。
+ */
+.titlebar__brand span,
+.panel__title,
+.wheel__num {
+  mix-blend-mode: var(--ink-blend);
+}
+
+/* 深色玻璃下的主按钮：着色是暗的，按钮得自己亮起来 */
+:root[data-lum='dark'] .btn--primary {
+  background: rgba(255, 255, 255, 0.86);
+  color: #16181f;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+:root[data-lum='dark'] .btn--primary:hover {
+  background: #fff;
+}

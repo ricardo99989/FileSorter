@@ -51,6 +51,48 @@
   --shadow-2: 0 1px 4px rgba(58, 72, 100, 0.04), 0 12px 30px rgba(58, 72, 100, 0.07);
   --shadow-3: 0 2px 8px rgba(52, 64, 92, 0.05), 0 20px 48px rgba(52, 64, 92, 0.1);
 
+  /* 卡片体积：三层影子分工 —— 接触影贴边、中层给厚度、远层给浮起高度 */
+  --shadow-card: 0 1px 1px rgba(22, 28, 44, 0.07), 0 6px 14px -6px rgba(22, 28, 44, 0.16),
+    0 20px 38px -20px rgba(22, 28, 44, 0.24);
+  --shadow-card-hover: 0 1px 2px rgba(22, 28, 44, 0.08), 0 10px 22px -8px rgba(22, 28, 44, 0.2),
+    0 30px 56px -24px rgba(22, 28, 44, 0.3);
+  --shadow-panel: 0 1px 2px rgba(22, 28, 44, 0.04), 0 8px 22px -10px rgba(22, 28, 44, 0.14),
+    0 26px 60px -30px rgba(22, 28, 44, 0.2);
+
+  /* ---------- 玻璃材质参数（3.3） ----------
+     六步法：投影 → 模糊提亮 → 边缘折射 → 着色 → 边缘光 → 文字着色。
+     这里的数值就是规范值，组件里不再另写一套：
+       浅色玻璃  着色白 6%~22% · 模糊 2px · 饱和 180% · 亮度 1.06
+       深色玻璃  着色 rgb(20,20,24) 16%~38% · 模糊 2px · 饱和 160% · 亮度 0.8
+
+     着色透明度是**自适应**的：--bg-busy 由主进程采样窗口外桌面得出
+     （0=纯色墙纸，1=满屏图标），背景越花着色越实，文字才压得住。 */
+  --mat-blur: 2px;
+  --mat-sat: 180%;
+  --mat-bright: 1.06;
+  --tint-rgb: 255 255 255;
+  --bg-busy: 0.4;
+  --bg-lum: 0.72;
+  --tint-a: calc(0.06 + var(--bg-busy) * 0.16);
+  --sheen-a: rgba(255, 255, 255, 0.1);
+  /* 卡片描边：浅色玻璃上白描边看不见，用一道冷灰细线把卡片从面板上"切"出来 */
+  --card-stroke: rgba(108, 124, 156, 0.14);
+  --ink-blend: multiply;
+
+  /* 边缘折射：边宽 44px、位移 1.1×边宽折算、色散 ±15% */
+  --lens-edge: 44px;
+  --lens-shift: 9px;
+  --disp: 0.15;
+  --disp-warm: rgba(255, 96, 96, var(--disp));
+  --disp-cool: rgba(96, 132, 255, var(--disp));
+  /* 边缘光三档：外缘迎光、内收一道、右下背光 */
+  --edge-hi: rgba(255, 255, 255, 0.62);
+  --edge-hi-2: rgba(255, 255, 255, 0.26);
+  --edge-lo: rgba(40, 52, 76, 0.06);
+  --edge-lo-2: rgba(40, 52, 76, 0.1);
+  --edge-inner: rgba(255, 255, 255, 0.14);
+  --lens-glow: rgba(255, 255, 255, 0.16);
+
   /* ---------- 主色（全局只两个：雾蓝灰 + 淡灰紫） ----------
      其余全是中性灰。强调色只允许出现在「需要被看见一次」的地方。 */
   --accent: #8a9bae;
@@ -134,6 +176,33 @@
   --shadow-2: 0 2px 6px rgba(0, 0, 0, 0.32), 0 14px 34px rgba(0, 0, 0, 0.3);
   --shadow-3: 0 4px 12px rgba(0, 0, 0, 0.34), 0 22px 52px rgba(0, 0, 0, 0.4);
 
+  --shadow-card: 0 1px 1px rgba(0, 0, 0, 0.28), 0 6px 14px -6px rgba(0, 0, 0, 0.36),
+    0 18px 36px -18px rgba(0, 0, 0, 0.44);
+  --shadow-card-hover: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 22px -8px rgba(0, 0, 0, 0.42),
+    0 28px 54px -22px rgba(0, 0, 0, 0.5);
+  --shadow-panel: 0 1px 3px rgba(0, 0, 0, 0.3), 0 12px 28px -12px rgba(0, 0, 0, 0.4),
+    0 30px 64px -30px rgba(0, 0, 0, 0.5);
+
+  /* 深色玻璃：rgb(20,20,24) 16%~38%、模糊 2px、饱和 160%、亮度 0.8 */
+  --mat-blur: 2px;
+  --mat-sat: 160%;
+  --mat-bright: 0.8;
+  --tint-rgb: 20 20 24;
+  --tint-a: calc(0.16 + var(--bg-busy) * 0.22);
+  --sheen-a: rgba(255, 255, 255, 0.05);
+  --ink-blend: screen;
+
+  --edge-hi: rgba(255, 255, 255, 0.4);
+  --edge-hi-2: rgba(255, 255, 255, 0.14);
+  --edge-lo: rgba(0, 0, 0, 0.2);
+  --edge-lo-2: rgba(0, 0, 0, 0.26);
+  --edge-inner: rgba(255, 255, 255, 0.08);
+  --lens-glow: rgba(255, 255, 255, 0.07);
+  --card-stroke: rgba(255, 255, 255, 0.1);
+  --disp: 0.12;
+  --disp-warm: rgba(255, 96, 96, var(--disp));
+  --disp-cool: rgba(96, 132, 255, var(--disp));
+
   --accent: #8b9ac4;
   --accent-strong: #a6b3d8;
   --accent-soft: rgba(139, 154, 196, 0.16);
@@ -178,8 +247,8 @@
   --ink-3: #5c6678;
   --ink-4: #7f899b;
 
-  --read-sheet: rgba(255, 255, 255, 0.54);
-  --read-sheet-strong: rgba(255, 255, 255, 0.74);
+  --read-sheet: rgba(255, 255, 255, 0.88);
+  --read-sheet-strong: rgba(255, 255, 255, 0.9);
 }
 
 :root[data-material='acrylic'][data-theme='dark'] {
@@ -198,8 +267,82 @@
   --ink-3: #b4bdcc;
   --ink-4: #949dad;
 
-  --read-sheet: rgba(18, 20, 27, 0.46);
-  --read-sheet-strong: rgba(18, 20, 27, 0.66);
+  --read-sheet: rgba(18, 20, 27, 0.86);
+  --read-sheet-strong: rgba(18, 20, 27, 0.92);
+}
+
+/* ---------------------- 自适应明暗（采样桌面亮度） ----------------------
+   主进程用 desktopCapturer 取一张极小的桌面缩略图，算窗口外区域的平均亮度
+   （--bg-lum）和明暗方差（--bg-busy），渲染进程据此切 data-lum。
+
+   为什么不能只看主题：亚克力是"桌面在玻璃后面"，用户在浅色主题下把窗口
+   放到深色壁纸上，深色字会直接消失。这里以**背景亮度**为准，而不是以主题为准：
+   亮度 < 0.5 就翻成深色玻璃 + 浅色文字，> 0.5 翻回浅色玻璃 + 深色文字。
+   同一套变量既管着色，也管文字与边光，避免"玻璃翻了、字没翻"的错位。 */
+:root[data-material='acrylic'][data-lum='light'] {
+  color-scheme: light;
+
+  --tint-rgb: 255 255 255;
+  --tint-a: calc(0.06 + var(--bg-busy) * 0.16);
+  --mat-sat: 180%;
+  --mat-bright: 1.06;
+  --sheen-a: rgba(255, 255, 255, 0.1);
+  --ink-blend: multiply;
+
+  --ink-1: #171b24;
+  --ink-2: #3a4354;
+  --ink-3: #5c6678;
+  --ink-4: #7f899b;
+
+  --glass-stroke: rgba(255, 255, 255, 0.68);
+  --glass-hair: rgba(255, 255, 255, 0.42);
+  --glass-inner: rgba(255, 255, 255, 0.22);
+  --glass-edge: rgba(255, 255, 255, 0.22);
+
+  --edge-hi: rgba(255, 255, 255, 0.66);
+  --edge-hi-2: rgba(255, 255, 255, 0.26);
+  --edge-lo: rgba(40, 52, 76, 0.06);
+  --edge-lo-2: rgba(40, 52, 76, 0.1);
+  --edge-inner: rgba(46, 60, 88, 0.07);
+  --lens-glow: rgba(255, 255, 255, 0.16);
+  --card-stroke: rgba(108, 124, 156, 0.14);
+  --text-lift: 0 1px 1px rgba(255, 255, 255, 0.5);
+
+  --read-sheet: rgba(255, 255, 255, 0.9);
+  --read-sheet-strong: rgba(255, 255, 255, 0.9);
+}
+
+:root[data-material='acrylic'][data-lum='dark'] {
+  color-scheme: dark;
+
+  --tint-rgb: 20 20 24;
+  --tint-a: calc(0.16 + var(--bg-busy) * 0.22);
+  --mat-sat: 160%;
+  --mat-bright: 0.8;
+  --sheen-a: rgba(255, 255, 255, 0.05);
+  --ink-blend: screen;
+
+  --ink-1: #f2f4fa;
+  --ink-2: #cbd2de;
+  --ink-3: #b4bdcc;
+  --ink-4: #949dad;
+
+  --glass-stroke: rgba(255, 255, 255, 0.18);
+  --glass-hair: rgba(255, 255, 255, 0.12);
+  --glass-inner: rgba(255, 255, 255, 0.07);
+  --glass-edge: rgba(255, 255, 255, 0.1);
+
+  --edge-hi: rgba(255, 255, 255, 0.42);
+  --edge-hi-2: rgba(255, 255, 255, 0.15);
+  --edge-lo: rgba(0, 0, 0, 0.2);
+  --edge-lo-2: rgba(0, 0, 0, 0.28);
+  --edge-inner: rgba(255, 255, 255, 0.08);
+  --lens-glow: rgba(255, 255, 255, 0.07);
+  --card-stroke: rgba(255, 255, 255, 0.1);
+  --text-lift: 0 1px 2px rgba(0, 0, 0, 0.5);
+
+  --read-sheet: rgba(14, 16, 22, 0.88);
+  --read-sheet-strong: rgba(14, 16, 22, 0.92);
 }
 
 * {

@@ -1758,8 +1758,8 @@ dom.modal.addEventListener('click', async (event) => {
       renderPanel();
     } else if (name === 'mode') {
       state.settings.mode = value;
-      document.documentElement.dataset.mode = value;
-      await api.setMode(value);
+      // 走统一的切换器：它会先播 90ms 预备动作，再由 win:modeChanged 接上入场动画
+      await switchMode(value);
     } else if (name === 'sidebarSide') {
       state.settings.sidebarSide = value;
       await api.setSide(value);
@@ -2090,6 +2090,18 @@ window.addEventListener('keydown', (event) => {
     undoLast();
     return;
   }
+  /* Ctrl+, 打开设置：紧凑模式下侧栏没了，这是唯一不依赖鼠标的入口 */
+  if ((event.ctrlKey || event.metaKey) && event.key === ',') {
+    event.preventDefault();
+    openSettings();
+    return;
+  }
+  /* Ctrl+Shift+W 回到窗口模式（Ctrl+W 是关闭窗口，别抢） */
+  if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'w') {
+    event.preventDefault();
+    switchMode('window');
+    return;
+  }
   if (inInput) return;
 
   const index = state.selected ? state.entries.findIndex((item) => item.path === state.selected) : -1;
@@ -2185,6 +2197,13 @@ $('btnBatch').addEventListener('click', openBatch);
 $('btnHistory').addEventListener('click', openHistory);
 $('btnTags').addEventListener('click', openTags);
 
+/**
+ * 紧凑模式（侧栏 / 任务栏悬浮）里侧栏是隐藏的，设置入口只能在标题栏。
+ * 「回到窗口模式」给一个一步到位的出口 —— 不让用户先进设置再找模式开关。
+ */
+$('btnCompactSettings').addEventListener('click', () => openSettings());
+$('btnCompactExpand').addEventListener('click', () => switchMode('window'));
+
 /* 主进程事件 */
 api.onProgress((progress) => {
   state.organize.progress = progress;
@@ -2214,7 +2233,86 @@ api.onFsChanged((payload) => {
   navigate(state.cwd, { push: false, refresh: true, keepQuery: true });
 });
 
-api.onModeChanged(({ mode }) => {
+/* ------------------------------ 模式切换 ------------------------------ */
+
+/** 预备动作时长：够眼睛"感觉到要变了"，又不至于让人等 */
+const MODE_ANTICIPATE_MS = 90;
+
+function motionEnabled() {
+  return (
+    !document.documentElement.classList.contains('motion-off') &&
+    !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
+}
+
+function currentMode() {
+  return document.documentElement.dataset.mode || 'window';
+}
+
+/**
+ * 唯一的模式切换入口。
+ *
+ * 窗口尺寸是瞬间改的（setBounds 逐帧补间在 Windows 上会掉帧、还会让亚克力闪），
+ * 所以"动效"拆成两段：切之前先轻轻收一下（预备动作），
+ * 切之后从锚点方向展开（入场）。中间那下跳变由高光扫过盖住。
+ */
+let modeSwitching = false;
+
+async function switchMode(mode) {
+  if (!mode || mode === currentMode() || modeSwitching) return;
+  const root = document.documentElement;
+  modeSwitching = true;
+  root.dataset.modeFrom = currentMode();
+
+  if (motionEnabled()) {
+    root.classList.add('mode-anticipate');
+    await new Promise((resolve) => setTimeout(resolve, MODE_ANTICIPATE_MS));
+  }
+
+  try {
+    await api.setMode(mode);
+  } finally {
+    root.classList.remove('mode-anticipate');
+    // 动画总时长 420ms + 200ms 余量，期间不接受第二次切换，避免窗口尺寸打架
+    setTimeout(() => {
+      modeSwitching = false;
+    }, 620);
+  }
+}
+
+/** 入场：由 win:modeChanged 触发，方向和锚点写在 data-mode-from / data-mode-to 上 */
+function playModeTransition(from, to, side) {
+  const root = document.documentElement;
+  root.classList.remove('mode-anticipate');
+  root.dataset.modeFrom = from || 'window';
+  root.dataset.modeTo = to;
+  if (side) root.dataset.side = side;
+
+  root.classList.remove('mode-enter');
+  void root.offsetWidth; // 强制回流，让同一个类重新触发动画
+  root.classList.add('mode-enter');
+
+  /**
+   * 收尾以 animationend 为准，定时器只作兜底。
+   * 后台/被遮挡的窗口里 setTimeout 会被 Chromium 节流到 1s 以上，
+   * 只靠定时器会让动画类多挂很久（冒烟里实测挂在 1.2s 还没摘）。
+   */
+  const shell = document.querySelector('.app');
+  const finish = () => {
+    root.classList.remove('mode-enter');
+    shell.removeEventListener('animationend', onEnd);
+  };
+  const onEnd = (event) => {
+    if (event.target === shell) finish();
+  };
+  shell.addEventListener('animationend', onEnd);
+  clearTimeout(playModeTransition.timer);
+  // 兜底时长按实际动画时长算：调试时把 --mode-dur 拉长，兜底也得跟着拉长
+  const dur = parseFloat(getComputedStyle(root).getPropertyValue('--mode-dur')) || 420;
+  playModeTransition.timer = setTimeout(finish, dur + 400);
+}
+
+api.onModeChanged(({ mode, side }) => {
   const previous = document.documentElement.dataset.mode;
   document.documentElement.dataset.mode = mode;
   state.settings.mode = mode;
@@ -2239,20 +2337,27 @@ api.onModeChanged(({ mode }) => {
 
   if (state.panel === 'settings') renderPanel();
 
-  /**
-   * 三模式切换时布局是"整块重排"（侧栏从有到无），直接跳会很硬。
-   * 加 320ms 的淡入上浮，让眼睛有个落点；动画只碰 opacity/transform，不触重排。
-   */
-  const root = document.documentElement;
-  root.classList.remove('mode-anim');
-  void root.offsetWidth;
-  root.classList.add('mode-anim');
-  setTimeout(() => root.classList.remove('mode-anim'), 380);
+  playModeTransition(previous, mode, side);
 
   applyModeCopy();
   // 紧凑模式不显示轮盘，窗口模式才显示，切回来要重算
   renderWheel();
   list.schedule();
+});
+
+/** 桌面亮度/复杂度：主进程采样窗口外的桌面，这里落到 CSS 变量上 */
+api.onBackdrop((payload) => {
+  const { luminance, busy } = payload || {};
+  const root = document.documentElement;
+  if (typeof luminance === 'number' && Number.isFinite(luminance)) {
+    // 低于 0.5 就是深色底：玻璃翻深色、文字翻浅色
+    root.dataset.lum = luminance < 0.5 ? 'dark' : 'light';
+    root.style.setProperty('--bg-lum', String(luminance));
+  }
+  if (typeof busy === 'number' && Number.isFinite(busy)) {
+    // 背景越花，着色越实（6%→22% / 16%→38%）
+    root.style.setProperty('--bg-busy', String(busy));
+  }
 });
 
 api.onTrayAction((payload) => {
@@ -2295,6 +2400,7 @@ async function boot() {
 
   document.documentElement.lang = getLang() === 'en' ? 'en' : 'zh-CN';
   document.documentElement.dataset.mode = state.settings.mode || 'window';
+  document.documentElement.dataset.side = state.settings.sidebarSide || 'left';
   applyStaticI18n();
   applyModeCopy();
   applyTheme(false);
@@ -2326,6 +2432,9 @@ async function boot() {
     const fallback = state.places[0]?.dir || state.drives[0]?.path;
     if (fallback && !isSamePath(fallback, start)) await navigate(fallback, { push: true });
   }
+
+  // 主动要一次桌面亮度：主进程那次推送可能早于这里订阅完成
+  api.refreshBackdrop();
 }
 
 boot().catch((err) => {

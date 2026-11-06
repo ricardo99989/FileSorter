@@ -11,6 +11,8 @@
     <link rel="stylesheet" href="./styles/glass.css" />
     <link rel="stylesheet" href="./styles/app.css" />
     <link rel="stylesheet" href="./styles/panels.css" />
+    <!-- 材质层放最后：它要在前面几套之上重写玻璃的面、缘、投影与文字着色 -->
+    <link rel="stylesheet" href="./styles/material.css" />
     <!-- 材质档位要在样式应用前定好，所以放在 head 末尾同步执行 -->
     <script src="./js/boot.js"></script>
   </head>
@@ -27,6 +29,40 @@
         </div>
         <span class="titlebar__meta" id="titleMeta">正在读取…</span>
         <div class="titlebar__spacer"></div>
+
+        <!--
+          紧凑模式（侧边栏 / 任务栏悬浮）会把 .sidebar 整块隐藏，而设置入口原本只在侧栏底部，
+          于是切过去之后就再也点不回窗口模式了。这里在标题栏补一组紧凑控件：
+          设置 + 一键回到窗口模式，两种紧凑模式下才显示。
+        -->
+        <div class="compactbar" id="compactBar">
+          <button
+            class="icon-btn"
+            id="btnCompactSettings"
+            type="button"
+            title="设置 (Ctrl+,)"
+            aria-label="设置"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z" />
+            </svg>
+          </button>
+          <button
+            class="icon-btn"
+            id="btnCompactExpand"
+            type="button"
+            title="回到窗口模式 (Ctrl+Shift+W)"
+            aria-label="回到窗口模式"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3.2" y="4.6" width="17.6" height="14.8" rx="2.4" />
+              <path d="M3.2 9.2h17.6" opacity=".55" />
+              <path d="M8.6 13.4l3.4-2.6 3.4 2.6" opacity=".9" />
+            </svg>
+          </button>
+        </div>
+
         <div class="wincontrols">
           <button type="button" data-win="minimize" title="最小化" aria-label="最小化">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3">
