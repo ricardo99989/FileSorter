@@ -5,6 +5,8 @@
 选一个文件夹，它告诉你哪些文件会被挪到哪，你勾掉不想动的，确认后执行；后悔了随时撤销，连撤多步也行。
 顺便它还认得 140+ 种扩展名、能查重、能打标签、能预览、能打包加密。
 
+[下载最新版](https://github.com/ricardo99989/FileSorter/releases/latest) · [反馈问题](https://github.com/ricardo99989/FileSorter/issues) · [玻璃质感设计说明](docs/design-glass.md) · MIT 许可 · Windows 10/11
+
 <p align="center">
   <img src="docs/icon.png" width="96" alt="FileSorter 图标">
 </p>
@@ -389,8 +391,9 @@ FileSorter 的设计从头到尾围绕一件事——**让「误整理」这件�
   实验报告 / 提纲 / 重点 / 真题」时，整理时先归到 `学习/`，再按扩展名细分。
   自定义规则优先级仍然更高。
 - **开机自启**：写系统登录项，带 `--hidden` 参数静默进托盘，不抢焦点。
-- **反馈入口**：设置 → 关于 里加了「反馈问题 / 更新日志」，跳 GitHub Issues / Releases。
-  仓库地址在 `src/renderer/js/panels/settings.js` 的 `REPO_URL`，发布前改成你自己的。
+- **反馈入口**：设置 → 关于 里有「反馈问题 / 更新日志」，跳到
+  [GitHub Issues](https://github.com/ricardo99989/FileSorter/issues) / [Releases](https://github.com/ricardo99989/FileSorter/releases)。
+  仓库地址统一定义在 `src/renderer/js/panels/settings.js` 的 `REPO_URL`。
 
 ---
 
@@ -575,7 +578,7 @@ acrylic 的 tint 明暗跟**系统**主题走，不认应用里的 `data-theme`�
 
 ### 直接用安装包
 
-到 Releases 页下载 `FileSorter-3.8.0-x64.exe`，双击安装。
+到 [Releases 页](https://github.com/ricardo99989/FileSorter/releases/latest) 下载 `FileSorter-3.8.0-x64.exe`，双击安装。
 
 NSIS 安装包，可选安装目录，**不需要管理员权限**。未做代码签名，首次运行 SmartScreen 会提示"未知发布者"，点"更多信息 → 仍要运行"。
 
@@ -584,11 +587,11 @@ NSIS 安装包，可选安装目录，**不需要管理员权限**。未做代�
 ### 从源码运行
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/ricardo99989/FileSorter.git
 cd FileSorter
 npm install        # 只装 electron、electron-builder、chokidar
 npm start          # 开发模式
-npm test           # 122 项单元测试
+npm test           # 161 项测试（150 通过 / 11 跳过）
 npm run dist       # 打包 Windows 安装包到 dist/
 ```
 
@@ -740,7 +743,7 @@ npm run smoke        # 启动、截图、退出
 ## 贡献
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/ricardo99989/FileSorter.git
 cd FileSorter
 npm install
 npm test              # 改文件操作或规则引擎后请先跑测试

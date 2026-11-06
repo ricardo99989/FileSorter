@@ -12,11 +12,8 @@ import { icon, categoryIcon, categoryTone } from '../icons.js';
 import { esc, formatClock } from '../format.js';
 import { t } from '../../../shared/i18n.mjs';
 
-/**
- * 仓库地址：反馈 / 更新日志都跳这里。
- * 发布前把这一行改成你自己的仓库，否则点开是 404。
- */
-export const REPO_URL = 'https://github.com/filesorter/FileSorter';
+/** 仓库地址：设置 → 关于 里的「反馈问题 / 更新日志」都跳这里。 */
+export const REPO_URL = 'https://github.com/ricardo99989/FileSorter';
 
 const TABS = [
   { id: 'appearance', label: 'settings.tab.appearance', icon: 'sun' },

@@ -8,6 +8,14 @@
   "author": {
     "name": "FileSorter Contributors"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ricardo99989/FileSorter.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ricardo99989/FileSorter/issues"
+  },
+  "homepage": "https://github.com/ricardo99989/FileSorter#readme",
   "keywords": [
     "electron",
     "file-manager",
