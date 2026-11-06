@@ -111,6 +111,7 @@ contextBridge.exposeInMainWorld('filesorter', {
   /* 窗口 */
   win: (action) => invoke('win:action', { action }),
   setMode: (mode) => invoke('win:setMode', { mode }),
+  glassBase: (value) => invoke('win:glassBase', { value }),
   setSide: (side) => invoke('win:setSide', { side }),
   background: (rects) => invoke('win:backdrop', { rects }),
   notify: (title, body) => invoke('win:notify', { title, body }),

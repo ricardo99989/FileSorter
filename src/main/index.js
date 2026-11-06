@@ -313,7 +313,15 @@ function createWindow() {
     roundedCorners: true,
     // 亚克力由系统在窗口背后绘制，页面底板必须透明才透得上来
     backgroundColor: useAcrylic ? '#00000000' : shellColor(),
-    ...(useAcrylic ? { backgroundMaterial: 'acrylic' } : {}),
+    /* 冒烟可切到 mica 做 A/B：mica 取壁纸色、几乎没有霜层，比 acrylic 更透；
+       acrylic 的霜更重但色温更稳。默认仍是 acrylic，实测哪张更通透再决定。 */
+    ...(useAcrylic
+      ? {
+          backgroundMaterial:
+            process.env.SMOKE_MATERIAL ||
+            (store.get().glassBase === 'clear' ? 'none' : 'acrylic'),
+        }
+      : {}),
     title: 'FileSorter',
     skipTaskbar: spec.skipTaskbar,
     alwaysOnTop: spec.alwaysOnTop,
@@ -757,6 +765,19 @@ function attachSmokeProbe(win) {
           mainW: Math.round(main.getBoundingClientRect().width),
           mainOverflow: main.getBoundingClientRect().right > window.innerWidth + 1,
           headColor: getComputedStyle(document.querySelector('.tablehead')).color,
+          desc: (() => {
+            const el = document.querySelector('.file-row__desc');
+            if (!el) return null;
+            const cs = getComputedStyle(el);
+            const chain = [];
+            let cur = el;
+            while (cur && cur !== document.body) {
+              const o = getComputedStyle(cur).opacity;
+              if (o !== '1') chain.push(cur.className + ':' + o);
+              cur = cur.parentElement;
+            }
+            return { color: cs.color, size: cs.fontSize, weight: cs.fontWeight, opacities: chain };
+          })(),
           headOpacity: getComputedStyle(document.querySelector('.tablehead')).opacity,
           ink3: getComputedStyle(document.documentElement).getPropertyValue('--ink-3').trim(),
         }));
@@ -785,6 +806,50 @@ function attachSmokeProbe(win) {
             return b ? [b.clientHeight, b.scrollHeight] : null;
           })(),
         }));
+      })()`,
+      /* 3.6：玻璃底切换 + 设置页是否出现新行 */
+      glassbase: `(async () => {
+        const out = {};
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+        document.getElementById('btnSettings').click();
+        await wait(700);
+        out.hasRow = Boolean(document.querySelector('[data-segment=\"glassBase\"]'));
+        const btns = [...document.querySelectorAll('[data-segment=\"glassBase\"] button')];
+        out.segBtns = btns.map((b) => b.textContent);
+        // 走真实路径：点「全透明」
+        btns.find((b) => b.dataset.value === 'clear')?.click();
+        await wait(700);
+        out.dataset = document.documentElement.dataset.glassBase;
+        out.stored = await window.filesorter.settings.get().then((r) => r.data?.glassBase).catch(() => null);
+        out.scrim = getComputedStyle(document.querySelector('.vcontent')).backgroundColor;
+        // 再切回系统磨砂
+        btns.find((b) => b.dataset.value === 'acrylic')?.click();
+        await wait(600);
+        out.dataset2 = document.documentElement.dataset.glassBase;
+        console.log('GLASSBASE ' + JSON.stringify(out));
+      })()`,
+      /* 3.6：悬浮/侧栏模式下换盘符 */
+      places: `(async () => {
+        const out = {};
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+        await window.filesorter.setMode('dock');
+        await wait(900);
+        out.mode = document.documentElement.dataset.mode;
+        out.btnVisible = Boolean(document.getElementById('btnPlaces')?.offsetParent);
+        document.getElementById('btnPlaces').click();
+        await wait(600);
+        const pop = document.getElementById('placePop');
+        out.open = pop && !pop.hidden;
+        const items = [...pop.querySelectorAll('.placepop__item')];
+        out.items = items.map((el) => el.dataset.path);
+        const other = items.find((el) => /^[D-Z]:/i.test(el.dataset.path || ''));
+        out.pick = other ? other.dataset.path : null;
+        if (other) other.click();
+        await wait(1200);
+        out.cwd = window.__lens.state.cwd;
+        out.rows = document.querySelectorAll('.file-row').length;
+        out.popClosed = document.getElementById('placePop').hidden;
+        console.log('PLACES ' + JSON.stringify(out));
       })()`,
       /* 3.5 回归：新手引导、拖拽归类、搜索耗时 */
       v35: `(async () => {

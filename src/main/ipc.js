@@ -786,6 +786,23 @@ function registerIpc(ctx) {
     }),
   );
 
+  /**
+   * 切换玻璃底。setBackgroundMaterial 运行时可改，不需要重建窗口；
+   * 改完写回 store，下次启动直接按这个值创建。
+   */
+  ipcMain.handle(
+    'win:glassBase',
+    wrap(async (payload) => {
+      const value = payload?.value === 'clear' ? 'clear' : 'acrylic';
+      const win = getWindow();
+      if (win && !win.isDestroyed()) {
+        win.setBackgroundMaterial(value === 'clear' ? 'none' : 'acrylic');
+      }
+      await store.save({ glassBase: value });
+      return { glassBase: value };
+    }),
+  );
+
   ipcMain.handle(
     'win:setSide',
     wrap(async (payload) => {      const side = payload.side === 'right' ? 'right' : 'left';

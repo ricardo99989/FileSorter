@@ -1,22 +1,31 @@
 /**
- * material.css — 液态玻璃 3.5
+ * material.css — 液态玻璃 3.6
  *
- * 参考四篇拆解（苹果 Liquid Glass 的七层模型 + 五步玻璃法）后重写，原则只有三条：
+ * 这一版不是凭感觉调参，三个技能的规则各自落到具体位置：
  *
- *   1. 玻璃本身**不带底色**。以前一层白 8%~22% 的填料把桌面糊住了，用户要的是
- *      "干净、通透、没有底色干扰" —— 所以面上只留 3%~5% 的极淡染色，
- *      其余全部交给 backdrop-filter 的模糊与饱和度。
- *   2. 厚度全部做在**边缘**上。真玻璃的信息量在边缘：迎光的亮边、背光的暗边、
- *      向内收的一道壁厚、红蓝错位的色散。中间是平的 —— 这也对应苹果法线图
- *      "中心朝屏幕外、只有边缘倾斜"的做法（SDF 梯度 → 法线 → 高光/折射）。
- *   3. 液态感只给一层极慢的**流动高光**，沿边缘绕一圈（14s），
- *      不碰内容区、不重排、不重绘文字。
+ *   · ui-ux-pro-max 的 `liquid-glass` 风格条目（styles.csv, style id: liquid-glass）给了六条
+ *     实现清单：只用在导航与控件上、内容要独立一层、颜色要克制、要有 reduced-transparency
+ *     兜底、要有 reduced-motion 兜底、文字对比度必须验。下面逐条对应。
+ *   · hallmark 的 Floor 第 40 条：正文 4.5:1、大字号与图标 3:1；第 29 条：不往文字后面铺
+ *     彩色辉光，最多两团固定径向光斑。第 2 条：不许 transition: all，不许动 width/height。
+ *   · liquidGL / liquidglass 的着色器数学：bevel 高度 h(d)=sqrt(d(2zR-d))，所以边缘亮度是
+ *     一条 sqrt 曲线而不是线性渐变；折射量正比于法线梯度（中心为零、边缘最大）；色散是把
+ *     R/B 通道按法线方向各偏一点采样；高光由四盏灯合成，左上最强（pow 90）、右下最弱（pow 50 ×0.3）。
  *
- * 底色/模糊/饱和度这些数值都在 tokens.css 里，改那一处即可。
+ * 三条硬原则：
  *
- * 关于"真折射"的物理边界（别再走回头路）：
- *   backdrop-filter 只采得到页面自己画的像素；窗口外的桌面由 DWM 绘制，CSS 折不动。
- *   Win11 亚克力下只能用光学近似（边光 + 色散），Win10 退回自绘背景时才有真位移。
+ *   1. **面上不加底色。** --tint-a 默认 0，玻璃=模糊+饱和度+亮度，白填料只有用户拉动
+ *      「玻璃厚度」滑块时才会出现。这是"完全通透、没有底色干扰"的唯一实现方式：
+ *      任何固定百分比的白都会把桌面糊成奶白。
+ *   2. **厚度只做在边缘。** 中间平、边缘弯 —— 用 1px/2px/6px/12px 四道内阴影模拟
+ *      sqrt 高度场的台阶，而不是给整块压一层暗。
+ *   3. **内容独立一层。** 列表区有自己的读区（--content-scrim），三块面板共用同一个值，
+ *      所以不会出现"这个模块浅、那个模块深"。
+ *
+ * 物理边界仍然成立：backdrop-filter 只采得到页面自己画的像素，窗口外的桌面由 DWM 绘制。
+ * liquidGL 之所以能真折射，是因为它先用 html-to-image 把背景栅格化成纹理；
+ * 桌面的那一半在 DWM 里，CSS 拿不到。所以这里做的是光学近似（边缘梯度 + 色散 + 菲涅尔），
+ * 不是假装做了真位移。
  */
 
 /* 让自定义属性可以参与动画：色相角必须注册成 <angle> 才能被 animation 插值 */
@@ -26,23 +35,30 @@
   initial-value: 0deg;
 }
 
-/* ------------------------------ 面（只有一层染色） ------------------------------ */
+/* ------------------------------ 面 ------------------------------ */
 
+/**
+ * 只有一层染色，默认透明度 0。
+ * saturate/brightness 是液态玻璃真正的"提亮"手段：不是往面上加白，而是把透过来的
+ * 背景本身提亮、加饱和 —— 白光一加就成塑料，提亮背景反而更像玻璃。
+ */
 .glass {
   background: rgb(var(--tint-rgb) / var(--tint-a));
-  border: 1px solid var(--glass-stroke);
+  border: 1px solid transparent;
   box-shadow: var(--shadow-panel);
-  /* 20px 是"能看出背后有东西、又不至于糊成磨砂"的平衡点 */
   backdrop-filter: blur(var(--mat-blur)) saturate(var(--mat-sat)) brightness(var(--mat-bright));
   -webkit-backdrop-filter: blur(var(--mat-blur)) saturate(var(--mat-sat))
     brightness(var(--mat-bright));
 }
 
-/* ------------------------------ 缘（三道边光） ------------------------------ */
+/* ------------------------------ 缘 ------------------------------ */
 
 /**
- * 左上迎光、右下背光，再向内收一道 —— 三道线全部画在 1px 的尺度上。
- * 中间不加任何填充：玻璃的"厚"来自边缘的明暗台阶，不来自整块压暗。
+ * bevel 高度场：h(d) = sqrt(d·(2zR−d))，d 是离边缘的像素距离，zR 是边宽。
+ * 这条曲线在 d=0 处斜率最大（边缘最陡），越往内越平 —— 所以亮度应该集中在最外 1~2px，
+ * 然后在 12px 内快速衰减。用四道内阴影叠出来，比单道 1px 白线更像有厚度的玻璃。
+ *
+ * 高光方向照抄着色器：L1(0.4,0.7) 左上最强、L2(-0.3,-0.5) 右下最弱、L4(0,0.9) 顶边窄高光。
  */
 .glass::before {
   content: '';
@@ -50,27 +66,35 @@
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
-  background: none;
-  opacity: 1;
   box-shadow:
+    /* L4：顶边那道最窄最亮的高光（pow 120） */
     inset 0 1px 0 var(--edge-hi),
+    /* L1：左上迎光，竖边稍弱于横边（pow 90 的侧面投影） */
     inset 1px 0 0 var(--edge-hi-2),
+    /* L2：右下背光，压出体积（pow 50 × 0.3） */
     inset -1px 0 0 var(--edge-lo),
-    inset 0 -1px 0 var(--edge-lo-2);
+    inset 0 -1px 0 var(--edge-lo-2),
+    /* bevel 台阶：1px 硬边 → 3px 衰减 → 7px 余晖 → 14px 收平 */
+    inset 0 0 0 1px var(--bevel-1),
+    inset 0 0 3px -1px var(--bevel-2),
+    inset 0 0 7px -3px var(--bevel-3),
+    inset 0 -10px 16px -16px var(--bevel-shade);
+  /* 壁厚内缘：比外缘再收 1px，暗示玻璃有厚度而不只是描边 */
   outline: 1px solid var(--edge-inner);
-  outline-offset: -6px;
+  outline-offset: -5px;
 }
 
-/* --------------------- 液态：流动高光 + 色散 --------------------- */
+/* --------------------- 液态：边缘流动高光 + 色散 --------------------- */
 
 /**
- * 两条东西叠在同一个伪元素上，都只在边缘一圈可见：
- *   · conic-gradient 的高光弧，角度由 --flow-angle 驱动，14 秒绕一圈；
- *   · 四条 1px 的色散线：暖色在外、冷色在内（红光偏折少，落在更外侧）。
+ * 只保留一层沿边缘的高光弧，18 秒绕一圈。
  *
- * 蒙版用单层径向渐变，而不是四层线性 + mask-composite：
- * 后者在个别 Chromium 版本上会退化成"整块全遮"，等于给整个面板盖了一层高光，
- * 表现就是"字发糊"（3.4 踩过）。单层渐变没有这个风险。
+ * 蒙版换成 px 级带宽（closest-side 减 14px），而不是按百分比：
+ * 按百分比在 300×600 的面板上会得到一条上百像素宽的高光带，整块面板像蒙了层雾，
+ * 文字跟着发糊（3.4 踩过）。px 带宽在任何尺寸下都只覆盖边缘。
+ *
+ * 色散：红光偏折少、落在更外侧（暖色在外），蓝光偏折多、落在内侧（冷色在内）。
+ * 这是着色器里 caD = N.xy * chroma 的 CSS 近似 —— 用四条 1px 线代替逐像素采样。
  */
 .glass::after {
   content: '';
@@ -79,24 +103,28 @@
   border-radius: inherit;
   pointer-events: none;
   background:
-    /* 液态流动的高光弧 */
     conic-gradient(
       from var(--flow-angle),
-      transparent 0 55%,
-      rgba(255, 255, 255, 0.16) 70%,
-      rgba(255, 255, 255, 0.05) 76%,
-      transparent 84% 100%
+      transparent 0 58%,
+      var(--flow-hi) 71%,
+      var(--flow-mid) 78%,
+      transparent 86% 100%
     ),
-    /* 色散：上/左 暖在外，下/右 冷在外 */
+    /* 上：暖在外 */
     linear-gradient(180deg, var(--disp-warm) 0 1px, transparent 1px),
-    linear-gradient(180deg, transparent 3px, var(--disp-cool) 3px 4px, transparent 4px),
+    /* 上：冷在内 */
+    linear-gradient(180deg, transparent 2px, var(--disp-cool) 2px 3px, transparent 3px),
     linear-gradient(90deg, var(--disp-warm) 0 1px, transparent 1px),
-    linear-gradient(90deg, transparent 3px, var(--disp-cool) 3px 4px, transparent 4px),
+    linear-gradient(90deg, transparent 2px, var(--disp-cool) 2px 3px, transparent 3px),
     linear-gradient(270deg, var(--disp-cool) 0 1px, transparent 1px),
     linear-gradient(0deg, var(--disp-warm) 0 1px, transparent 1px);
-  -webkit-mask-image: radial-gradient(farthest-side, transparent 62%, #000 100%);
-  mask-image: radial-gradient(farthest-side, transparent 62%, #000 100%);
-  animation: glass-flow 14s linear infinite;
+  -webkit-mask-image: radial-gradient(
+    closest-side,
+    transparent calc(100% - 14px),
+    #000 calc(100% - 13px)
+  );
+  mask-image: radial-gradient(closest-side, transparent calc(100% - 14px), #000 calc(100% - 13px));
+  animation: glass-flow 18s linear infinite;
 }
 
 @keyframes glass-flow {
@@ -105,60 +133,52 @@
   }
 }
 
-/* 关掉动效时高光停在原位，别让"省电模式"还在跑无限动画 */
-html.motion-off .glass::after {
-  animation: none;
-}
-
-:root[data-theme='dark'] .glass::after {
-  background:
-    conic-gradient(
-      from var(--flow-angle),
-      transparent 0 55%,
-      rgba(255, 255, 255, 0.1) 70%,
-      rgba(255, 255, 255, 0.03) 76%,
-      transparent 84% 100%
-    ),
-    linear-gradient(180deg, var(--disp-warm) 0 1px, transparent 1px),
-    linear-gradient(180deg, transparent 3px, var(--disp-cool) 3px 4px, transparent 4px),
-    linear-gradient(90deg, var(--disp-warm) 0 1px, transparent 1px),
-    linear-gradient(90deg, transparent 3px, var(--disp-cool) 3px 4px, transparent 4px),
-    linear-gradient(270deg, var(--disp-cool) 0 1px, transparent 1px),
-    linear-gradient(0deg, var(--disp-warm) 0 1px, transparent 1px);
-}
-
 /* ------------------------------ 卡片 ------------------------------ */
 
 /**
- * 卡片比面板多 3% 的白：它要能从面板上"浮"起来，但又不能变成一张白纸。
- * 体积感主要靠三层投影，不靠填充。
+ * 卡片比面板只多"一点点"（跟着厚度滑块走，默认还是 0）：
+ * 它靠 bevel 边光和三层投影浮起来，不靠填充。填充一旦白过 6%，卡片就从玻璃变成塑料片。
  */
 .grid-card {
-  background: rgb(var(--tint-rgb) / calc(var(--tint-a) + 0.03));
+  background: rgb(var(--tint-rgb) / calc(var(--tint-a) * 0.7));
   border: 1px solid var(--card-stroke);
   box-shadow: var(--shadow-card);
   transition: transform var(--t-base) var(--ease-out), box-shadow var(--t-base) var(--ease-out),
-    background var(--t-base) var(--ease), border-color var(--t-base) var(--ease);
+    border-color var(--t-base) var(--ease);
 }
 
 .grid-card:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-card-hover);
-  border-color: var(--edge-inner);
+  border-color: var(--edge-hi-2);
 }
 
-/* 列表行的悬停底：跟卡片同一套染色，避免一块实一块透 */
+/* 列表行悬停：同样跟着厚度走，避免"卡片透、行不透"的两套材质 */
 .file-row::before {
-  background: rgb(var(--tint-rgb) / calc(var(--tint-a) + 0.04));
+  background: rgb(var(--tint-rgb) / calc(var(--tint-a) * 0.8));
   border-color: var(--glass-stroke);
+}
+
+/* ------------------------- 内容层（独立一层） ------------------------- */
+
+/**
+ * liquid-glass 清单第 2 条：内容要跟玻璃分开一层。
+ *
+ * 这里的做法是给"读字的区域"一个统一极淡的读区，而不是给面板加厚 ——
+ * 面板保持 0 底色（通透），只有列表区有一层 6%（深色 10%）的压底，
+ * 三块面板共用同一个值，所以不会出现模块之间深浅不一。
+ * 字号最小的说明文字靠这一层把对比度顶到 4.5:1 以上。
+ */
+.vcontent,
+.detail__body {
+  background: var(--content-scrim);
 }
 
 /* ------------------------------ 文字 ------------------------------ */
 
 /**
- * 3.4 用过 mix-blend-mode（浅色 multiply / 深色 screen）。
- * 实测在"面板几乎全透、背后是亮壁纸"时会把字洗掉 —— screen 只会变亮，压不住浅底。
- * 这里改回实色 + 一道极轻的投影。
+ * 3.4 用过 mix-blend-mode（浅色 multiply / 深色 screen）。实测在"面板几乎全透、
+ * 背后是亮壁纸"时会把字洗掉 —— screen 只会变亮，压不住浅底。现在用实色 + 一道极轻投影。
  */
 :root[data-material='acrylic'] body {
   text-shadow: var(--text-lift);
@@ -166,11 +186,74 @@ html.motion-off .glass::after {
 
 /* 深色玻璃下的主按钮：玻璃是暗的，按钮得自己亮起来 */
 :root[data-theme='dark'] .btn--primary {
-  background: rgba(255, 255, 255, 0.86);
+  background: rgba(255, 255, 255, 0.9);
   color: #16181f;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
 :root[data-theme='dark'] .btn--primary:hover {
   background: #fff;
+}
+
+/* ------------------------- 系统偏好兜底 ------------------------- */
+
+/**
+ * 清单第 4、5 条：reduced-transparency / reduced-motion 必须有兜底。
+ * 这两个 media 在 Chromium 里都支持；不支持的旧版本会自动忽略，等同于保持通透。
+ */
+@media (prefers-reduced-transparency: reduce) {
+  .glass {
+    background: var(--sheet-bg);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .glass::after {
+    display: none;
+  }
+
+  .vcontent,
+  .detail__body {
+    background: transparent;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .glass {
+    background: var(--sheet-bg);
+    border-color: var(--ink-4);
+  }
+
+  .glass::after {
+    display: none;
+  }
+}
+
+/* 关掉动效时高光停在原位，别让"省电模式"还在跑无限动画 */
+html.motion-off .glass::after {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glass::after {
+    animation: none;
+  }
+}
+
+/* ------------------------- 玻璃底：全透明档 ------------------------- */
+
+/**
+ * 没有 DWM 的霜层，文字直接坐在桌面上 —— 这时读区必须更实一点，边缘也必须更亮一点，
+ * 否则面板会消失成一堆漂浮的字。
+ * 仍然只加在内容区（--content-scrim）和边缘（bevel），面板本身保持 0 底色。
+ */
+:root[data-glass-base='clear'] {
+  --content-scrim: rgb(248 250 253 / 0.22);
+  --bevel-1: rgba(255, 255, 255, 0.56);
+  --bevel-shade: rgba(16, 22, 36, 0.3);
+}
+
+:root[data-theme='dark'][data-glass-base='clear'] {
+  --content-scrim: rgb(6 8 12 / 0.32);
+  --bevel-1: rgba(255, 255, 255, 0.26);
 }

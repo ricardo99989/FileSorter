@@ -47,6 +47,12 @@ const DEFAULT_SETTINGS = Object.freeze({
    * 3.5 起默认 0 —— 用户要的就是通透优先。
    */
   mist: 0,
+  /**
+   * 玻璃底：acrylic = 系统磨砂（默认，模糊由 DWM 给，任何壁纸都压得住）；
+   * clear = 全透明（窗口不要任何系统材质，桌面原样透上来，适合干净的壁纸）。
+   * 这是 Windows 上唯一能影响"通透度"的系统级开关，应用侧控制不了亚克力的霜有多重。
+   */
+  glassBase: 'acrylic',
 
   /* ---------------- 窗口 ---------------- */
   /** 显示模式：window 窗口 / sidebar 侧边栏 / dock 任务栏悬浮 */
@@ -257,6 +263,7 @@ function createStore(baseDir) {
     if (typeof raw.autostart === 'boolean') next.autostart = raw.autostart;
     if (typeof raw.learnMode === 'boolean') next.learnMode = raw.learnMode;
     if (typeof raw.onboarded === 'boolean') next.onboarded = raw.onboarded;
+    if (raw.glassBase === 'acrylic' || raw.glassBase === 'clear') next.glassBase = raw.glassBase;
     // 收藏只留绝对路径，去重、限长：这是个只增不减的列表，跑几年也不该把设置撑爆
     if (Array.isArray(raw.favorites)) {
       const seen = new Set();

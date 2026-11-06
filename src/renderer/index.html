@@ -39,6 +39,19 @@
         <div class="compactbar" id="compactBar">
           <button
             class="icon-btn"
+            id="btnPlaces"
+            type="button"
+            title="切换位置 / 磁盘"
+            aria-label="切换位置或磁盘"
+            aria-haspopup="menu"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3.6 7.4A1.8 1.8 0 0 1 5.4 5.6h4.1l1.7 2h7.4a1.8 1.8 0 0 1 1.8 1.8v7.2a1.8 1.8 0 0 1-1.8 1.8H5.4a1.8 1.8 0 0 1-1.8-1.8z" />
+              <path d="M8.2 13.4h7.6" opacity=".55" />
+            </svg>
+          </button>
+          <button
+            class="icon-btn"
             id="btnCompactSettings"
             type="button"
             title="设置 (Ctrl+,)"
@@ -290,6 +303,12 @@
 
     <section class="modal" id="modal" aria-hidden="true"></section>
     <div class="menu" id="menu" hidden></div>
+
+    <!--
+      紧凑模式下的位置浮层：侧栏被隐藏后，常用位置和盘符的入口跟着一起没了，
+      用户只能看到上一次停留的那一个盘。这个浮层是它们在 460×340 里的替代入口。
+    -->
+    <div class="placepop" id="placePop" hidden role="menu" aria-label="位置与磁盘"></div>
     <div class="toasts" id="toasts"></div>
 
     <!-- 折射滤镜：feDisplacementMap 拿 feTurbulence 当位移图，把背后的内容按噪声场拉扯。

@@ -173,6 +173,23 @@ function appearanceTab(state) {
 
     <div class="section">
       ${sliderRow('mist', t('settings.mist'), t('settings.mist.hint'), s.mist, 0, 30)}
+
+      <div class="setting">
+        <div class="setting__main">
+          <div class="setting__label">${t('settings.glassBase')}</div>
+          <div class="setting__hint">${t('settings.glassBase.hint')}</div>
+        </div>
+        <div class="setting__control">
+          ${segment(
+            'glassBase',
+            [
+              { value: 'acrylic', label: t('settings.glassBase.acrylic') },
+              { value: 'clear', label: t('settings.glassBase.clear') },
+            ],
+            s.glassBase || 'acrylic',
+          )}
+        </div>
+      </div>
       ${switchRow('cursorGlow', t('settings.cursorGlow'), t('settings.cursorGlow.hint'), s.cursorGlow)}
       ${switchRow('skipHidden', t('settings.skipHidden'), '', s.skipHidden)}
       ${switchRow('closeToTray', t('settings.closeToTray'), '', s.closeToTray)}

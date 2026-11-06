@@ -72,16 +72,16 @@
 }
 
 :root[data-material='acrylic'] .app-bg {
-  /* 3.5：底板只留两团极淡的色相，用来把 DWM 给的偏暖 tint 拉回冷调。
-     原来那层 linear-gradient(白, mist) 已经删掉 —— 它和 .glass 的染色叠在一起，
-     既把桌面糊白，又让"玻璃厚度"滑块要同时改两个地方。现在厚度只有一个旋钮。 */
-  background:
-    radial-gradient(78% 62% at 12% -6%, rgba(168, 188, 228, 0.22), transparent 62%),
-    radial-gradient(72% 58% at 94% 96%, rgba(184, 178, 224, 0.18), transparent 60%);
+  /* 3.6：底板彻底清空。
+     3.5 还留着两团冷色径向渐变（0.22 / 0.18），本意是把 DWM 偏暖的 tint 拉回冷调 ——
+     但那等于在桌面上盖了两块淡蓝紫的色斑，正是用户说的"底色干扰"。
+     色温交给系统「透明效果」设置，应用侧不再染色。 */
+  background: none;
 }
 
 :root[data-material='acrylic'] .app-bg::after {
-  opacity: 0.1;
+  /* 颗粒层也一起去掉：它用 overlay 混合，会在纯透明底上留下可见的灰噪 */
+  opacity: 0;
 }
 
 :root[data-material='acrylic'][data-theme='dark'] .app-bg {

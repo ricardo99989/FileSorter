@@ -89,6 +89,8 @@ const dom = {
   previewBody: $('previewBody'),
   previewOpen: $('previewOpen'),
   previewClose: $('previewClose'),
+  btnPlaces: $('btnPlaces'),
+  placePop: $('placePop'),
 };
 
 const state = {
@@ -372,6 +374,107 @@ function renderSidebar() {
         ${icon('drive', 16)}<span>${esc(drive.name)}</span>
       </button>`;
     })].join('');
+}
+
+/* -------------------- 紧凑模式：位置 / 磁盘浮层 -------------------- */
+
+/**
+ * 侧栏一旦隐藏，常用位置和「此电脑」的盘符入口就一起消失了。
+ * 上一次 3.3 只修了「记住上次目录」，用户仍然只能待在那一个盘里 ——
+ * 想换到 D: 盘得先回窗口模式。这个浮层把入口搬到标题栏，三种模式都能用。
+ *
+ * 每次打开都重新问一次主进程：插拔 U 盘、挂载网盘之后列表应该立刻是对的，
+ * 而不是沿用开机时那一份。
+ */
+async function refreshPlaces() {
+  try {
+    const result = await api.places();
+    if (result.ok) {
+      state.places = result.data.places;
+      state.drives = result.data.drives;
+      state.clouds = result.data.clouds || [];
+      renderSidebar();
+    }
+  } catch {
+    /* 拉不到就用内存里那份，浮层照样能开 */
+  }
+}
+
+function placeRow(item, kind) {
+  const active = isSamePath(item.dir || item.path, state.cwd) ? ' is-active' : '';
+  const path = item.dir || item.path;
+  const iconName = kind === 'cloud' ? 'globe' : kind === 'drive' ? 'drive' : item.icon || 'folder';
+  const sub = kind === 'drive' ? '本地磁盘' : kind === 'cloud' ? '云端' : '常用位置';
+  return `<button class="placepop__item${active}" type="button" role="menuitem"
+      data-path="${esc(path)}" title="${esc(path)}">
+      <span class="placepop__ico">${icon(iconName, 15)}</span>
+      <span class="placepop__text">
+        <span class="placepop__name">${esc(item.name)}</span>
+        <span class="placepop__sub">${esc(sub)}</span>
+      </span>
+    </button>`;
+}
+
+function placeGroup(label, rows) {
+  if (!rows.length) return '';
+  return `<div class="placepop__label">${esc(label)}</div>${rows.join('')}`;
+}
+
+function closePlacePop() {
+  if (!dom.placePop || dom.placePop.hidden) return;
+  dom.placePop.hidden = true;
+  dom.placePop.innerHTML = '';
+  window.removeEventListener('click', onPlaceOutside, true);
+  window.removeEventListener('blur', closePlacePop);
+  dom.btnPlaces?.setAttribute('aria-expanded', 'false');
+}
+
+function onPlaceOutside(event) {
+  if (!dom.placePop.contains(event.target) && !dom.btnPlaces.contains(event.target)) closePlacePop();
+}
+
+async function openPlacePop() {
+  if (!dom.placePop) return;
+  if (!dom.placePop.hidden) return closePlacePop();
+
+  await refreshPlaces();
+
+  const html = [
+    placeGroup(t('nav.places'), state.places.map((place) => placeRow(place, 'place'))),
+    placeGroup('云端', state.clouds.map((cloud) => placeRow(cloud, 'cloud'))),
+    placeGroup(t('nav.drives'), state.drives.map((drive) => placeRow(drive, 'drive'))),
+  ]
+    .filter(Boolean)
+    .join('');
+
+  dom.placePop.innerHTML = html || `<div class="placepop__empty">${esc(t('state.empty.title'))}</div>`;
+  dom.placePop.hidden = false;
+  dom.btnPlaces.setAttribute('aria-expanded', 'true');
+
+  // 贴着按钮右上角展开，超出窗口就翻到左边
+  const rect = dom.btnPlaces.getBoundingClientRect();
+  dom.placePop.style.left = '0px';
+  dom.placePop.style.top = '0px';
+  const pop = dom.placePop.getBoundingClientRect();
+  const left = clamp(rect.right - pop.width, 8, window.innerWidth - pop.width - 8);
+  const top = clamp(rect.bottom + 6, 8, window.innerHeight - pop.height - 8);
+  dom.placePop.style.left = `${left}px`;
+  dom.placePop.style.top = `${top}px`;
+
+  window.addEventListener('click', onPlaceOutside, true);
+  window.addEventListener('blur', closePlacePop);
+
+  dom.placePop.querySelector('.placepop__item.is-active')?.focus({ preventScroll: true });
+}
+
+if (dom.btnPlaces) {
+  dom.btnPlaces.addEventListener('click', openPlacePop);
+  dom.placePop.addEventListener('click', async (event) => {
+    const item = event.target.closest('[data-path]');
+    if (!item) return;
+    closePlacePop();
+    await navigate(item.dataset.path, { push: true });
+  });
 }
 
 /* ------------------------------ 面包屑 ------------------------------ */
@@ -2184,6 +2287,11 @@ dom.modal.addEventListener('click', async (event) => {
       state.theme = value;
       applyTheme();
       await api.settings.save({ theme: value });
+    } else if (name === 'glassBase') {
+      state.settings.glassBase = value;
+      document.documentElement.dataset.glassBase = value;
+      const result = await api.glassBase(value);
+      if (!result.ok) toast(result.error || t('toast.failed'), { error: true });
     } else if (name === 'motion') {
       state.settings.motionLevel = value;
       applyMotion(value);
@@ -2529,6 +2637,10 @@ window.addEventListener('resize', debounce(() => {
 window.addEventListener('keydown', (event) => {
   const inInput = event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement;
   if (event.key === 'Escape') {
+    if (dom.placePop && !dom.placePop.hidden) {
+      closePlacePop();
+      return;
+    }
     if (!dom.preview.hidden) {
       closePreview();
       return;
@@ -2868,7 +2980,8 @@ api.onModeChanged(({ mode, side }) => {
  */
 function applyGlassTint() {
   const mist = Math.max(0, Math.min(30, Number(state.settings.mist) || 0));
-  const alpha = 0.04 + (mist / 30) * 0.26;
+  // 3.6：基数是 0 —— 面上不铺白，玻璃只靠模糊、饱和度和边缘。滑块 0~30 → 0~0.32。
+  const alpha = (mist / 30) * 0.32;
   document.documentElement.style.setProperty('--tint-a', alpha.toFixed(3));
 }
 
@@ -2917,6 +3030,8 @@ async function boot() {
 
   document.documentElement.lang = getLang() === 'en' ? 'en' : 'zh-CN';
   document.documentElement.dataset.mode = state.settings.mode || 'window';
+  // 玻璃底：acrylic = 系统磨砂，clear = 全透明。CSS 用它调读区强度。
+  document.documentElement.dataset.glassBase = state.settings.glassBase || 'acrylic';
   document.documentElement.dataset.side = state.settings.sidebarSide || 'left';
   applyStaticI18n();
   applyModeCopy();
