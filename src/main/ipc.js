@@ -52,7 +52,7 @@ const wrap = (handler) => async (event, payload) => {
 function registerIpc(ctx) {
   const {
     ipcMain, dialog, shell, clipboard, app, store, undo, tags, watcher,
-    getWindow, setMode, sampleBackdrop, pluginsDir, runScheduledTidy, scheduler, notify,
+    getWindow, setMode, backdrop, recaptureBackdrop, pluginsDir, runScheduledTidy, scheduler, notify,
   } = ctx;
 
   /** 拿到当前窗口的发送器，窗口没了就静默丢弃 */
@@ -673,12 +673,16 @@ function registerIpc(ctx) {
     }),
   );
 
-  /* 渲染进程开机后主动要一次桌面亮度，避免依赖主进程那一次可能早于订阅的推送 */
+  /**
+   * 渲染进程要「我这些面板背后有多亮」：把面板的屏幕矩形传上来，
+   * 主进程查 64×36 的亮度表，逐块返回。开窗时已经采过一次，这里不再截图。
+   */
   ipcMain.handle(
     'win:backdrop',
-    wrap(async () => {
-      sampleBackdrop?.(true);
-      return { ok: true };
+    wrap(async (payload) => {
+      if (payload?.recapture) await recaptureBackdrop?.();
+      const rects = Array.isArray(payload?.rects) ? payload.rects.slice(0, 12) : [];
+      return backdrop?.(rects) || { luminance: null, busy: null, panels: [] };
     }),
   );
 

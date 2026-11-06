@@ -296,6 +296,8 @@ function applyTheme(animate = true) {
     state.theme === 'system' ? t('settings.theme.system') : state.theme === 'dark' ? t('settings.theme.dark') : t('settings.theme.light');
   dom.btnTheme.innerHTML = icon(state.theme === 'system' ? 'monitor' : theme === 'dark' ? 'moon' : 'sun', 15);
   dom.btnTheme.title = `${t('toolbar.theme')}：${label}`;
+  // 主题变了，目标表面亮度也变了，厚度要重算（此时窗口尺寸没变，直接排一次）
+  if (booted) scheduleTint();
 }
 
 media.addEventListener('change', () => {
@@ -2061,6 +2063,7 @@ window.addEventListener('resize', debounce(() => {
     list.schedule();
   }
   renderCrumbs();
+  scheduleTint();
 }, 140));
 
 window.addEventListener('keydown', (event) => {
@@ -2257,6 +2260,8 @@ function currentMode() {
  * 切之后从锚点方向展开（入场）。中间那下跳变由高光扫过盖住。
  */
 let modeSwitching = false;
+/** boot 完成前不要重算厚度：那时 state.settings 还没读，主题也还没钉 */
+let booted = false;
 
 async function switchMode(mode) {
   if (!mode || mode === currentMode() || modeSwitching) return;
@@ -2338,6 +2343,8 @@ api.onModeChanged(({ mode, side }) => {
   if (state.panel === 'settings') renderPanel();
 
   playModeTransition(previous, mode, side);
+  // 窗口几何变了 => 面板背后换了一块桌面，厚度重算
+  scheduleTint();
 
   applyModeCopy();
   // 紧凑模式不显示轮盘，窗口模式才显示，切回来要重算
@@ -2345,20 +2352,78 @@ api.onModeChanged(({ mode, side }) => {
   list.schedule();
 });
 
-/** 桌面亮度/复杂度：主进程采样窗口外的桌面，这里落到 CSS 变量上 */
-api.onBackdrop((payload) => {
-  const { luminance, busy } = payload || {};
+/* ---------------------- 玻璃厚度：按背景亮度自适应 ---------------------- */
+
+/**
+ * 明暗只跟主题走，厚度跟背景走。
+ *
+ * 上一版连明暗也交给采样（亮度 < 0.5 翻深色玻璃），结果用户在浅色模式下得到
+ * 一块深色玻璃、浅色字压在浅色面上。现在：
+ *   浅色模式 → 目标表面亮度 0.68，背景越暗白填料越多（5%~60%），永远压得住深色字
+ *   深色模式 → 目标 0.22，背景越亮黑填料越多
+ * 背景本来就够亮/够暗时只填 5% —— 那是"薄如蝉翼"的那一档。
+ */
+const TINT_PANELS = ['.titlebar', '.sidebar', '.main', '.details'];
+
+function tintAlpha(lum, busy, dark) {
+  // 0.72 是"深色 12px 字刚好清楚"的表面亮度；低于它就得靠填料补
+  const target = dark ? 0.22 : 0.72;
+  const tintLum = dark ? 0.08 : 1;
+  // 背景已经站在目标那一侧（浅色下够亮 / 深色下够暗）就只铺 5%，玻璃越薄越好；
+  // 站错边才靠填料把表面拉回目标亮度，保证文字对比度
+  const needFill = dark ? lum > target : lum < target;
+  let alpha = 0.05;
+  if (needFill) alpha = (target - lum) / (tintLum - lum);
+  // 背景越花越要压一层，否则细碎的文字边缘会和背景纹理打架
+  alpha += (Number(busy) || 0) * 0.05;
+  return Math.max(0.05, Math.min(0.7, Number(alpha.toFixed(3))));
+}
+
+let tintTimer = null;
+
+async function applyBackdropTint() {
   const root = document.documentElement;
-  if (typeof luminance === 'number' && Number.isFinite(luminance)) {
-    // 低于 0.5 就是深色底：玻璃翻深色、文字翻浅色
-    root.dataset.lum = luminance < 0.5 ? 'dark' : 'light';
-    root.style.setProperty('--bg-lum', String(luminance));
+  const dark = resolvedTheme() === 'dark';
+  const nodes = TINT_PANELS.map((sel) => document.querySelector(sel)).filter(Boolean);
+  const rects = nodes.map((el) => {
+    const r = el.getBoundingClientRect();
+    return {
+      x: Math.round(window.screenX + r.left),
+      y: Math.round(window.screenY + r.top),
+      width: Math.round(r.width),
+      height: Math.round(r.height),
+    };
+  });
+
+  let payload = null;
+  try {
+    const result = await api.background(rects);
+    payload = result && result.ok ? result.data : null;
+  } catch (err) {
+    payload = null;
   }
-  if (typeof busy === 'number' && Number.isFinite(busy)) {
-    // 背景越花，着色越实（6%→22% / 16%→38%）
-    root.style.setProperty('--bg-busy', String(busy));
-  }
-});
+
+  const fallback = dark ? 0.18 : 0.72;
+  const busy = payload && typeof payload.busy === 'number' ? payload.busy : 0.4;
+  const globalLum =
+    payload && typeof payload.luminance === 'number' ? payload.luminance : fallback;
+  root.style.setProperty('--bg-busy', String(busy));
+
+  const globalAlpha = tintAlpha(globalLum, busy, dark);
+  root.style.setProperty('--tint-a', String(globalAlpha));
+
+  nodes.forEach((el, index) => {
+    const local = payload && Array.isArray(payload.panels) ? payload.panels[index] : null;
+    const lum = typeof local === 'number' ? local : globalLum;
+    el.style.setProperty('--tint-a', String(tintAlpha(lum, busy, dark)));
+    el.dataset.backdrop = lum >= 0.5 ? 'light' : 'dark';
+  });
+}
+
+function scheduleTint() {
+  clearTimeout(tintTimer);
+  tintTimer = setTimeout(applyBackdropTint, 160);
+}
 
 api.onTrayAction((payload) => {
   if (payload?.action === 'scheduled') {
@@ -2433,8 +2498,9 @@ async function boot() {
     if (fallback && !isSamePath(fallback, start)) await navigate(fallback, { push: true });
   }
 
-  // 主动要一次桌面亮度：主进程那次推送可能早于这里订阅完成
-  api.refreshBackdrop();
+  // 玻璃厚度按"面板背后的桌面亮度"定：开窗时主进程已经采过一张亮度表，这里只查表
+  await applyBackdropTint();
+  booted = true;
 }
 
 boot().catch((err) => {
@@ -2445,4 +2511,9 @@ boot().catch((err) => {
 });
 
 // 便于冒烟脚本读取内部状态，不影响正常使用
-window.__lens = { state, navigate, openPanel: (kind) => (kind === 'settings' ? openSettings() : openDrawer(kind)) };
+window.__lens = {
+  state,
+  navigate,
+  openPanel: (kind) => (kind === 'settings' ? openSettings() : openDrawer(kind)),
+  refreshTint: () => applyBackdropTint(),
+};

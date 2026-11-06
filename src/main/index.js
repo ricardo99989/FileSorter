@@ -136,44 +136,36 @@ function applyMode(mode, { silent = false } = {}) {
   if (!silent) {
     mainWindow.webContents.send('win:modeChanged', { mode, side: prefs.sidebarSide });
   }
-  // 换位置就等于换了背后的桌面，重新采一次亮度（320ms 后再采，等 DWM 把 tint 重画完）
-  clearTimeout(backdropTimer);
-  backdropTimer = setTimeout(() => sampleBackdrop(true), 320);
 }
 
 /* --------------------------- 桌面亮度采样 --------------------------- */
 
 /**
- * 玻璃材质的着色和文字颜色要跟着**背后的桌面**走，而不是跟着主题走：
- * 浅色主题 + 深色壁纸 = 深色字压深色底，一个字都看不清。
+ * 玻璃的**厚度**要跟着背后的桌面走，但**明暗**不能跟着走。
  *
- * 做法：用 desktopCapturer 取一张 192px 宽的桌面缩略图，统计窗口矩形以外区域的
- * 平均亮度（Rec.709）和亮度标准差。窗口自己那部分要扣掉，否则采样到的是"我们
- * 自己的玻璃"，会形成 亮→翻暗→更暗 的正反馈。
+ * 上一版把明暗也交给采样：亮度 < 0.5 就把浅色主题翻成深色玻璃。实际用起来是灾难——
+ * 用户选了浅色模式，得到一块深色玻璃；而且窗口一盖满屏幕，采样只剩边缘几十个像素，
+ * 兜底逻辑会把「我们自己的窗口」也算进平均值，判断直接反了（截图里浅色字压在浅绿玻璃上）。
  *
- * 成本：一次 ~10ms + 一张 192×108 缩略图，只在开窗、切模式、移动窗口后触发，
- * 并且 1.2s 内不重复采样。
+ * 现在的规则：
+ *   明暗 = 主题（浅色模式永远是浅色玻璃，可预期）
+ *   厚度 = 采样（背景越暗，白色填料越多，把表面推到 0.68；背景够亮就只用 5%）
+ *
+ * 采样在**窗口创建之前**做，拿到的是一张干净的桌面，不会拍到自己。
+ * 只存一张 64×36 的亮度表，之后按屏幕坐标查表，不再截图。
  */
-let backdropTimer = null;
-let backdropSampledAt = 0;
+let desktopMap = null;
 
-async function sampleBackdrop(force = false) {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  const now = Date.now();
-  if (!force && now - backdropSampledAt < 1200) return;
-  backdropSampledAt = now;
+const MAP_COLS = 64;
+const MAP_ROWS = 36;
 
+async function captureDesktopMap() {
   try {
-    const bounds = mainWindow.getBounds();
-    const display = screen.getDisplayMatching(bounds);
-    const thumbW = 192;
-    const thumbH = Math.max(
-      32,
-      Math.round((thumbW * display.size.height) / Math.max(1, display.size.width)),
-    );
+    const display = screen.getPrimaryDisplay();
+    const aspect = display.size.height / Math.max(1, display.size.width);
     const sources = await desktopCapturer.getSources({
       types: ['screen'],
-      thumbnailSize: { width: thumbW, height: thumbH },
+      thumbnailSize: { width: MAP_COLS * 4, height: Math.round(MAP_COLS * 4 * aspect) },
     });
     const source =
       sources.find((item) => String(item.display_id) === String(display.id)) || sources[0];
@@ -181,48 +173,79 @@ async function sampleBackdrop(force = false) {
 
     const size = source.thumbnail.getSize();
     const bitmap = source.thumbnail.toBitmap(); // BGRA
-    const sx = size.width / Math.max(1, display.size.width);
-    const sy = size.height / Math.max(1, display.size.height);
-    const wx0 = (bounds.x - display.bounds.x) * sx;
-    const wy0 = (bounds.y - display.bounds.y) * sy;
-    const wx1 = wx0 + bounds.width * sx;
-    const wy1 = wy0 + bounds.height * sy;
-
-    const stat = (skipWindow) => {
-      let sum = 0;
-      let sumSq = 0;
-      let count = 0;
-      for (let y = 0; y < size.height; y += 1) {
-        for (let x = 0; x < size.width; x += 1) {
-          if (skipWindow && x >= wx0 && x < wx1 && y >= wy0 && y < wy1) continue;
-          const i = (y * size.width + x) * 4;
-          // Rec.709：人眼对绿最敏感，直接用 RGB 平均会把蓝天算得偏亮
-          const lum = (0.2126 * bitmap[i + 2] + 0.7152 * bitmap[i + 1] + 0.0722 * bitmap[i]) / 255;
-          sum += lum;
-          sumSq += lum * lum;
-          count += 1;
+    const values = new Float32Array(MAP_COLS * MAP_ROWS);
+    for (let cy = 0; cy < MAP_ROWS; cy += 1) {
+      const y0 = Math.floor((cy * size.height) / MAP_ROWS);
+      const y1 = Math.max(y0 + 1, Math.floor(((cy + 1) * size.height) / MAP_ROWS));
+      for (let cx = 0; cx < MAP_COLS; cx += 1) {
+        const x0 = Math.floor((cx * size.width) / MAP_COLS);
+        const x1 = Math.max(x0 + 1, Math.floor(((cx + 1) * size.width) / MAP_COLS));
+        let sum = 0;
+        let n = 0;
+        for (let y = y0; y < y1; y += 1) {
+          for (let x = x0; x < x1; x += 1) {
+            const i = (y * size.width + x) * 4;
+            // Rec.709：人眼对绿最敏感，直接 RGB 平均会把蓝天算得偏亮
+            sum += (0.2126 * bitmap[i + 2] + 0.7152 * bitmap[i + 1] + 0.0722 * bitmap[i]) / 255;
+            n += 1;
+          }
         }
+        values[cy * MAP_COLS + cx] = n ? sum / n : 0.5;
       }
-      if (!count) return null;
-      const mean = sum / count;
-      const variance = Math.max(0, sumSq / count - mean * mean);
-      return { mean, std: Math.sqrt(variance), count };
+    }
+    desktopMap = {
+      values,
+      cols: MAP_COLS,
+      rows: MAP_ROWS,
+      width: display.size.width,
+      height: display.size.height,
     };
-
-    // 窗口铺满整屏（侧栏/最大化）时窗口外没剩几个像素，那就整屏取样
-    let result = stat(true);
-    const total = size.width * size.height;
-    if (!result || result.count < total * 0.08) result = stat(false);
-    if (!result) return;
-
-    mainWindow.webContents.send('win:backdrop', {
-      luminance: Number(result.mean.toFixed(3)),
-      // 0.18 是「纯色壁纸 → 满屏图标」的实测跨度，归一到 0~1 给 CSS 当插值因子
-      busy: Number(Math.min(1, result.std / 0.18).toFixed(3)),
-    });
   } catch (err) {
-    /* 采样失败不影响任何主流程：CSS 里 --bg-busy / --bg-lum 都有兜底值 */
+    /* 采不到就退回 CSS 兜底值，不影响启动 */
   }
+}
+
+/** 取一块屏幕矩形（DIP）下的桌面平均亮度；越界部分自动裁掉 */
+function areaLuminance(rect) {
+  if (!desktopMap) return null;
+  const { values, cols, rows, width, height } = desktopMap;
+  const x0 = Math.max(0, Math.floor((rect.x / width) * cols));
+  const x1 = Math.min(cols, Math.ceil(((rect.x + rect.width) / width) * cols));
+  const y0 = Math.max(0, Math.floor((rect.y / height) * rows));
+  const y1 = Math.min(rows, Math.ceil(((rect.y + rect.height) / height) * rows));
+  if (x1 <= x0 || y1 <= y0) return null;
+  let sum = 0;
+  let n = 0;
+  for (let y = y0; y < y1; y += 1) {
+    for (let x = x0; x < x1; x += 1) {
+      sum += values[y * cols + x];
+      n += 1;
+    }
+  }
+  return n ? sum / n : null;
+}
+
+/** 整屏的平均亮度 + 复杂度（给渲染进程算填料用） */
+function backdropSummary(rects = []) {
+  if (!desktopMap) return { luminance: null, busy: null, panels: [] };
+  const { values } = desktopMap;
+  let sum = 0;
+  let sumSq = 0;
+  for (let i = 0; i < values.length; i += 1) {
+    sum += values[i];
+    sumSq += values[i] * values[i];
+  }
+  const mean = sum / values.length;
+  const std = Math.sqrt(Math.max(0, sumSq / values.length - mean * mean));
+  return {
+    luminance: Number(mean.toFixed(3)),
+    // 0.18 是「纯色壁纸 → 满屏图标」的实测跨度，归一到 0~1
+    busy: Number(Math.min(1, std / 0.18).toFixed(3)),
+    panels: rects.map((rect) => {
+      const value = areaLuminance(rect);
+      return value == null ? null : Number(value.toFixed(3));
+    }),
+  };
 }
 
 function createWindow() {
@@ -264,7 +287,14 @@ function createWindow() {
     backdropWindow.loadFile(path.join(__dirname, 'backdrop.html'), {
       // 把当前主题带给合成桌面：深色主题下要一张暮色桌面，
       // 配大亮天的话亚克力一透，深色模式的截图就成灰蓝一团。
-      query: { theme: store.get().theme === 'dark' ? 'dark' : 'light' },
+      query: {
+        // --smoke-backdrop=dark 可以强制一张暮色桌面，用来单独验证「浅色主题 + 深色桌面」
+        // 这一组最容易翻车的组合（3.3 的 bug 就出在这里）
+        theme:
+          process.argv.includes('--smoke-backdrop=dark') || store.get().theme === 'dark'
+            ? 'dark'
+            : 'light',
+      },
     });
     // 建合成桌面这一步会把 themeSource 弹回 system，必须在建主窗之前再钉一次。
     // 少了这一行，深色主题下主窗口会拿到浅色 tint —— 白字压白玻璃，全看不清楚。
@@ -304,16 +334,7 @@ function createWindow() {
     else mainWindow.show();
     // 恢复上次的窗口形态（尺寸记忆已经存过，这里只摆位置）
     if (mode !== 'window') applyMode(mode, { silent: true });
-    setTimeout(() => sampleBackdrop(true), 600);
   });
-
-  // 窗口挪动/改尺寸就是换了背后的桌面：停稳 700ms 再采样一次
-  const queueBackdrop = () => {
-    clearTimeout(backdropTimer);
-    backdropTimer = setTimeout(() => sampleBackdrop(), 700);
-  };
-  mainWindow.on('move', queueBackdrop);
-  mainWindow.on('resize', queueBackdrop);
 
   // 外链一律交给系统浏览器，窗口本身不导航
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -538,6 +559,23 @@ function attachSmokeProbe(win) {
   win.webContents.once('did-finish-load', async () => {
     await new Promise((resolve) => setTimeout(resolve, 1600));
 
+    /**
+     * 合成桌面是 createWindow 里才铺上去的，而亮度表是在开窗之前采的。
+     * 冒烟时必须在桌面铺好之后重采一次，否则测的还是真实壁纸的亮度。
+     */
+    if (isSmoke && process.env.SMOKE_BACKDROP) {
+      // 先把主窗藏起来再采：否则采到的是我们自己那块明亮的玻璃，亮度表全错
+      const wasVisible = win.isVisible();
+      win.hide();
+      await new Promise((resolve) => setTimeout(resolve, 160));
+      await captureDesktopMap();
+      if (wasVisible) win.showInactive();
+      await win.webContents
+        .executeJavaScript('window.__lens && window.__lens.refreshTint && window.__lens.refreshTint()')
+        .catch(() => {});
+      await new Promise((resolve) => setTimeout(resolve, 320));
+    }
+
     const steps = {
       /* 主题是循环切换的：system → light → dark → system，
          点一次不保证到目标档，所以循环点到为止 */
@@ -699,8 +737,16 @@ function attachSmokeProbe(win) {
           rows: document.querySelectorAll('.file-row').length,
           cards: document.querySelectorAll('.grid-card').length,
           mode: document.documentElement.dataset.mode,
-          lum: document.documentElement.dataset.lum,
+          theme: document.documentElement.dataset.theme,
           mat: document.documentElement.dataset.material,
+          tint: {
+            root: getComputedStyle(document.documentElement).getPropertyValue('--tint-a').trim(),
+            main: getComputedStyle(document.querySelector('.main')).getPropertyValue('--tint-a').trim(),
+            sidebar: getComputedStyle(document.querySelector('.sidebar')).getPropertyValue('--tint-a').trim(),
+          },
+          backdrop: ['.titlebar', '.sidebar', '.main', '.details'].map(
+            (sel) => document.querySelector(sel)?.dataset.backdrop,
+          ),
           mainW: Math.round(main.getBoundingClientRect().width),
           mainOverflow: main.getBoundingClientRect().right > window.innerWidth + 1,
         }));
@@ -956,13 +1002,19 @@ app.whenReady().then(async () => {
     scheduler,
     getWindow: () => mainWindow,
     setMode: (mode) => applyMode(mode),
-    sampleBackdrop: (force) => sampleBackdrop(force),
+    backdrop: (rects) => backdropSummary(rects),
+    recaptureBackdrop: () => captureDesktopMap(),
     pluginsDir: pluginsDir(),
     runScheduledTidy,
     notify,
     cloudDirs,
   });
 
+  /**
+   * 先采桌面、再开窗：此刻窗口还不存在，截到的是一张干净的壁纸，
+   * 不会把我们自己的玻璃算进平均值（上一版就栽在这上面）。
+   */
+  await captureDesktopMap();
   createWindow();
 
   /**

@@ -252,12 +252,13 @@
  * 虚拟滚动的长列表里会直接掉帧。
  */
 :root[data-material='acrylic'] {
-  --text-lift: 0 1px 1px rgba(255, 255, 255, 0.5);
+  /* 白托底只留一点点：填料已经把表面推到浅色，托太狠反而把深色字洗淡 */
+  --text-lift: 0 1px 1px rgba(255, 255, 255, 0.22);
   --ink-3: #5f6675;
   --ink-4: #7e8593;
 }
 :root[data-material='acrylic'][data-theme='dark'] {
-  --text-lift: 0 1px 2px rgba(0, 0, 0, 0.55);
+  --text-lift: 0 1px 2px rgba(0, 0, 0, 0.45);
 }
 :root[data-material='acrylic'] body {
   text-shadow: var(--text-lift);

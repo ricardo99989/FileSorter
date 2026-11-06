@@ -107,7 +107,7 @@ contextBridge.exposeInMainWorld('filesorter', {
   win: (action) => invoke('win:action', { action }),
   setMode: (mode) => invoke('win:setMode', { mode }),
   setSide: (side) => invoke('win:setSide', { side }),
-  refreshBackdrop: () => invoke('win:backdrop'),
+  background: (rects) => invoke('win:backdrop', { rects }),
   notify: (title, body) => invoke('win:notify', { title, body }),
   info: () => invoke('app:info'),
   revealPath: (target) => invoke('app:revealPath', { path: target }),
@@ -119,6 +119,5 @@ contextBridge.exposeInMainWorld('filesorter', {
   onSpaceProgress: (handler) => subscribe('space:progress', handler),
   onFsChanged: (handler) => subscribe('fs:changed', handler),
   onModeChanged: (handler) => subscribe('win:modeChanged', handler),
-  onBackdrop: (handler) => subscribe('win:backdrop', handler),
   onTrayAction: (handler) => subscribe('tray:action', handler),
 });

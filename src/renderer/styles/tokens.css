@@ -73,7 +73,9 @@
   --tint-rgb: 255 255 255;
   --bg-busy: 0.4;
   --bg-lum: 0.72;
-  --tint-a: calc(0.06 + var(--bg-busy) * 0.16);
+  /* 填料透明度：JS 按每个面板背后的桌面亮度覆盖它。
+     兜底 0.12 是“背景中等亮度”时的厚度，避免开机闪一下白板。 */
+  --tint-a: 0.12;
   --sheen-a: rgba(255, 255, 255, 0.1);
   /* 卡片描边：浅色玻璃上白描边看不见，用一道冷灰细线把卡片从面板上"切"出来 */
   --card-stroke: rgba(108, 124, 156, 0.14);
@@ -188,7 +190,7 @@
   --mat-sat: 160%;
   --mat-bright: 0.8;
   --tint-rgb: 20 20 24;
-  --tint-a: calc(0.16 + var(--bg-busy) * 0.22);
+  --tint-a: 0.24;
   --sheen-a: rgba(255, 255, 255, 0.05);
   --ink-blend: screen;
 
@@ -241,11 +243,13 @@
   --glass-inner: rgba(255, 255, 255, 0.26);
   --glass-edge: rgba(255, 255, 255, 0.24);
 
-  /* 文字压在透光底上，要比实底时更深才立得住 */
-  --ink-1: #171b24;
-  --ink-2: #3a4354;
-  --ink-3: #5c6678;
-  --ink-4: #7f899b;
+  /* 文字压在透光底上，要比实底时更深才立得住。
+     3.3 再压一档：浅色玻璃的填料是按背景亮度算的，背景偏暗时表面只有 0.5~0.6 的亮度，
+     11.5px 的次级说明文字用 #7f899b 会直接糊掉（实测对比度 3:1 出头）。 */
+  --ink-1: #12161d;
+  --ink-2: #2f3745;
+  --ink-3: #48505e;
+  --ink-4: #636b7a;
 
   --read-sheet: rgba(255, 255, 255, 0.88);
   --read-sheet-strong: rgba(255, 255, 255, 0.9);
@@ -269,80 +273,6 @@
 
   --read-sheet: rgba(18, 20, 27, 0.86);
   --read-sheet-strong: rgba(18, 20, 27, 0.92);
-}
-
-/* ---------------------- 自适应明暗（采样桌面亮度） ----------------------
-   主进程用 desktopCapturer 取一张极小的桌面缩略图，算窗口外区域的平均亮度
-   （--bg-lum）和明暗方差（--bg-busy），渲染进程据此切 data-lum。
-
-   为什么不能只看主题：亚克力是"桌面在玻璃后面"，用户在浅色主题下把窗口
-   放到深色壁纸上，深色字会直接消失。这里以**背景亮度**为准，而不是以主题为准：
-   亮度 < 0.5 就翻成深色玻璃 + 浅色文字，> 0.5 翻回浅色玻璃 + 深色文字。
-   同一套变量既管着色，也管文字与边光，避免"玻璃翻了、字没翻"的错位。 */
-:root[data-material='acrylic'][data-lum='light'] {
-  color-scheme: light;
-
-  --tint-rgb: 255 255 255;
-  --tint-a: calc(0.06 + var(--bg-busy) * 0.16);
-  --mat-sat: 180%;
-  --mat-bright: 1.06;
-  --sheen-a: rgba(255, 255, 255, 0.1);
-  --ink-blend: multiply;
-
-  --ink-1: #171b24;
-  --ink-2: #3a4354;
-  --ink-3: #5c6678;
-  --ink-4: #7f899b;
-
-  --glass-stroke: rgba(255, 255, 255, 0.68);
-  --glass-hair: rgba(255, 255, 255, 0.42);
-  --glass-inner: rgba(255, 255, 255, 0.22);
-  --glass-edge: rgba(255, 255, 255, 0.22);
-
-  --edge-hi: rgba(255, 255, 255, 0.66);
-  --edge-hi-2: rgba(255, 255, 255, 0.26);
-  --edge-lo: rgba(40, 52, 76, 0.06);
-  --edge-lo-2: rgba(40, 52, 76, 0.1);
-  --edge-inner: rgba(46, 60, 88, 0.07);
-  --lens-glow: rgba(255, 255, 255, 0.16);
-  --card-stroke: rgba(108, 124, 156, 0.14);
-  --text-lift: 0 1px 1px rgba(255, 255, 255, 0.5);
-
-  --read-sheet: rgba(255, 255, 255, 0.9);
-  --read-sheet-strong: rgba(255, 255, 255, 0.9);
-}
-
-:root[data-material='acrylic'][data-lum='dark'] {
-  color-scheme: dark;
-
-  --tint-rgb: 20 20 24;
-  --tint-a: calc(0.16 + var(--bg-busy) * 0.22);
-  --mat-sat: 160%;
-  --mat-bright: 0.8;
-  --sheen-a: rgba(255, 255, 255, 0.05);
-  --ink-blend: screen;
-
-  --ink-1: #f2f4fa;
-  --ink-2: #cbd2de;
-  --ink-3: #b4bdcc;
-  --ink-4: #949dad;
-
-  --glass-stroke: rgba(255, 255, 255, 0.18);
-  --glass-hair: rgba(255, 255, 255, 0.12);
-  --glass-inner: rgba(255, 255, 255, 0.07);
-  --glass-edge: rgba(255, 255, 255, 0.1);
-
-  --edge-hi: rgba(255, 255, 255, 0.42);
-  --edge-hi-2: rgba(255, 255, 255, 0.15);
-  --edge-lo: rgba(0, 0, 0, 0.2);
-  --edge-lo-2: rgba(0, 0, 0, 0.28);
-  --edge-inner: rgba(255, 255, 255, 0.08);
-  --lens-glow: rgba(255, 255, 255, 0.07);
-  --card-stroke: rgba(255, 255, 255, 0.1);
-  --text-lift: 0 1px 2px rgba(0, 0, 0, 0.5);
-
-  --read-sheet: rgba(14, 16, 22, 0.88);
-  --read-sheet-strong: rgba(14, 16, 22, 0.92);
 }
 
 * {

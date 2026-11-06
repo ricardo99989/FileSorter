@@ -121,7 +121,7 @@
 .grid-card {
   background:
     linear-gradient(180deg, var(--sheen-a), transparent 46%),
-    rgb(var(--tint-rgb) / calc(var(--tint-a) + 0.08));
+    rgb(var(--tint-rgb) / calc(var(--tint-a) + 0.04));
   border: 1px solid var(--card-stroke);
   box-shadow: var(--shadow-card);
   transition: transform var(--t-base) var(--ease-out), box-shadow var(--t-base) var(--ease-out),
@@ -155,12 +155,12 @@
 }
 
 /* 深色玻璃下的主按钮：着色是暗的，按钮得自己亮起来 */
-:root[data-lum='dark'] .btn--primary {
+[data-theme='dark'] .btn--primary {
   background: rgba(255, 255, 255, 0.86);
   color: #16181f;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
-:root[data-lum='dark'] .btn--primary:hover {
+[data-theme='dark'] .btn--primary:hover {
   background: #fff;
 }
