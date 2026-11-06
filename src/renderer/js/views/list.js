@@ -88,6 +88,7 @@ export function rowHtml(entry, options = {}) {
   const tone = categoryTone(desc.category);
   const selected = options.selected ? ' is-selected' : '';
   const checked = options.checked ? ' is-checked' : '';
+  const favorite = options.favorite ? ' is-fav' : '';
 
   const thumb = canThumb(entry)
     ? `<img src="file://${esc(entry.path.replace(/\\/g, '/'))}" alt="" loading="lazy" decoding="async" />`
@@ -98,7 +99,7 @@ export function rowHtml(entry, options = {}) {
     .map((tag) => `<span class="tag-dot" data-color="${esc(tag.color)}" title="${esc(tag.name)}"></span>`)
     .join('');
 
-  return `<div class="file-row${selected}${checked}" data-path="${esc(entry.path)}" data-kind="row">
+  return `<div class="file-row${selected}${checked}${favorite}" data-path="${esc(entry.path)}" data-kind="row">
     <div class="file-row__check"><span class="checkbox${options.checked ? ' is-on' : ''}" data-check="${esc(entry.path)}"></span></div>
     <div class="file-row__name">
       <span class="file-ico" data-tone="${tone}">${thumb}</span>
@@ -114,6 +115,7 @@ export function rowHtml(entry, options = {}) {
     <div class="file-row__size">${entry.isDir ? '—' : esc(formatSize(entry.size))}</div>
     <div class="file-row__mtime">${esc(formatRelative(entry.mtime))}</div>
     <div class="file-row__act">
+      <button class="row-mini${options.favorite ? ' is-on' : ''}" data-act="fav" title="${t('menu.favorite')}">${icon(options.favorite ? 'star-fill' : 'star', 14)}</button>
       <button class="row-mini" data-act="preview" title="${t('menu.preview')}">${icon('eye', 14)}</button>
       <button class="row-mini" data-act="menu" title="更多">${icon('more', 14)}</button>
     </div>
@@ -126,6 +128,7 @@ export function gridCardHtml(entry, options = {}) {
   const tone = categoryTone(desc.category);
   const selected = options.selected ? ' is-selected' : '';
   const checked = options.checked ? ' is-checked' : '';
+  const favorite = options.favorite ? ' is-fav' : '';
 
   const thumb = canThumb(entry)
     ? `<img src="file://${esc(entry.path.replace(/\\/g, '/'))}" alt="" loading="lazy" decoding="async" />`
@@ -136,8 +139,9 @@ export function gridCardHtml(entry, options = {}) {
     .map((tag) => `<span class="tag-dot" data-color="${esc(tag.color)}"></span>`)
     .join('');
 
-  return `<div class="grid-card${selected}${checked}" data-path="${esc(entry.path)}" data-kind="card">
+  return `<div class="grid-card${selected}${checked}${favorite}" data-path="${esc(entry.path)}" data-kind="card">
     <span class="grid-card__check"><span class="checkbox${options.checked ? ' is-on' : ''}" data-check="${esc(entry.path)}"></span></span>
+    <button class="grid-card__fav${options.favorite ? ' is-on' : ''}" data-act="fav" title="${t('menu.favorite')}">${icon(options.favorite ? 'star-fill' : 'star', 13)}</button>
     <div class="grid-card__thumb file-ico" data-tone="${tone}">${thumb}</div>
     <div class="grid-card__name" title="${esc(entry.name)}">${esc(entry.name)}</div>
     <div class="grid-card__desc">${esc(desc.brief || desc.label || '')}</div>
@@ -154,6 +158,8 @@ export function gridCardHtml(entry, options = {}) {
 export function stateHtml(kind, options = {}) {
   const map = {
     empty: { icon: 'folder', title: t('state.empty.title'), desc: t('state.empty.desc'), acts: [] },
+    fav: { icon: 'star', title: t('scope.fav'), desc: t('scope.fav.empty'), acts: [] },
+    recent: { icon: 'ring', title: t('scope.recent'), desc: t('scope.recent.hint'), acts: [] },
     search: {
       icon: 'search',
       title: options.deep ? t('state.searchDeep.title') : t('state.search.title'),

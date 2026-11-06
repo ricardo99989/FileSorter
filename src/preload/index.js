@@ -103,6 +103,11 @@ contextBridge.exposeInMainWorld('filesorter', {
   /* 云盘 */
   clouds: () => invoke('cloud:list'),
 
+  /* 批量删除 / 移动（走回收站；重名不覆盖） */
+  trash: (paths) => invoke('fs:trash', { paths }),
+  moveTo: (paths, dest) => invoke('fs:moveTo', { paths, dest }),
+  autostart: (enabled) => invoke('app:autostart', { enabled }),
+
   /* 窗口 */
   win: (action) => invoke('win:action', { action }),
   setMode: (mode) => invoke('win:setMode', { mode }),

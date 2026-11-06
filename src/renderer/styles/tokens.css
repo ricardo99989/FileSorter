@@ -251,6 +251,8 @@
   --ink-3: #48505e;
   --ink-4: #636b7a;
 
+  /* 预览 / 确认这类"正在读内容"的浮层：比抽屉还要实，背后是密集的列表 */
+  --sheet-bg: rgba(252, 253, 255, 0.985);
   --read-sheet: rgba(255, 255, 255, 0.88);
   --read-sheet-strong: rgba(255, 255, 255, 0.9);
 }
@@ -271,6 +273,7 @@
   --ink-3: #b4bdcc;
   --ink-4: #949dad;
 
+  --sheet-bg: rgba(14, 16, 21, 0.975);
   --read-sheet: rgba(18, 20, 27, 0.86);
   --read-sheet-strong: rgba(18, 20, 27, 0.92);
 }

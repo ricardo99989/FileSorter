@@ -13,6 +13,7 @@
     <link rel="stylesheet" href="./styles/panels.css" />
     <!-- 材质层放最后：它要在前面几套之上重写玻璃的面、缘、投影与文字着色 -->
     <link rel="stylesheet" href="./styles/material.css" />
+    <link rel="stylesheet" href="./styles/features.css" />
     <!-- 材质档位要在样式应用前定好，所以放在 head 末尾同步执行 -->
     <script src="./js/boot.js"></script>
   </head>
@@ -220,9 +221,25 @@
             <button class="wheelbar__fold" id="btnWheelFold" type="button" title="收起分类轮盘" aria-label="收起或展开分类轮盘"></button>
           </section>
 
+          <!--
+            视图范围：全部 / 收藏 / 最近。
+            放在列表正上方而不是工具栏：工具栏在 1360 宽下已经塞满（面包屑 + 搜索 + 视图 + 图标），
+            再挤一组按钮会把面包屑压成省略号；这里独占一行 34px，两种视图下都在。
+          -->
+          <div class="scopebar">
+            <div class="scope" id="scopeBar" role="group" aria-label="视图范围">
+              <button type="button" data-scope="all" class="is-active" data-i18n="scope.all">全部</button>
+              <button type="button" data-scope="fav" data-i18n="scope.fav">收藏</button>
+              <button type="button" data-scope="recent" data-i18n="scope.recent">最近</button>
+            </div>
+            <span class="scopebar__hint" id="scopeHint"></span>
+          </div>
+
           <div class="selectionbar" id="selectionBar" hidden>
             <span class="selectionbar__count" id="selectionCount"></span>
             <div class="selectionbar__spacer"></div>
+            <button class="btn btn--sm" data-sel-act="move" type="button" data-i18n="sel.move">移动到…</button>
+            <button class="btn btn--sm btn--danger" data-sel-act="delete" type="button" data-i18n="sel.delete">删除</button>
             <button class="btn btn--sm" data-sel-act="tag" type="button">打标签</button>
             <button class="btn btn--sm" data-sel-act="batch" type="button">重命名</button>
             <button class="btn btn--sm" data-sel-act="archive" type="button">打包</button>
@@ -249,6 +266,28 @@
 
     <div class="scrim" id="scrim"></div>
     <section class="drawer" id="drawer" aria-hidden="true"></section>
+    <!--
+      文件快速预览：双击卡片直接在这里看，不拉外部程序。
+      图片走 <img>，文本走 peek 的纯文本，PDF 直接塞 iframe（Chromium 自带阅读器）。
+      整块是浮层，玻璃材质和抽屉/菜单同一套。
+    -->
+    <div class="preview" id="preview" hidden aria-hidden="true">
+      <div class="preview__scrim" data-preview-close></div>
+      <section class="preview__panel glass" role="dialog" aria-modal="true" aria-labelledby="previewTitle">
+        <header class="preview__head">
+          <div class="preview__meta">
+            <div class="preview__title" id="previewTitle"></div>
+            <div class="preview__sub" id="previewSub"></div>
+          </div>
+          <div class="preview__acts">
+            <button class="btn btn--sm" id="previewOpen" type="button"></button>
+            <button class="btn btn--sm btn--ghost" id="previewClose" type="button"></button>
+          </div>
+        </header>
+        <div class="preview__body" id="previewBody"></div>
+      </section>
+    </div>
+
     <section class="modal" id="modal" aria-hidden="true"></section>
     <div class="menu" id="menu" hidden></div>
     <div class="toasts" id="toasts"></div>

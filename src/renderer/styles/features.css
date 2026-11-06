@@ -1,0 +1,354 @@
+/**
+ * features.css — 3.4 新增交互：范围切换、快速预览、确认框、星标、快捷键表
+ *
+ * 只写"新出现的东西"，玻璃材质的规则仍然在 material.css 里。
+ * 浮层统一用 --read-sheet（见 tokens.css）：它们压在内容上，必须能读字。
+ */
+
+/* ------------------------------ 范围切换 ------------------------------ */
+
+.scope {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  flex: none;
+  border-radius: var(--radius-m);
+  background: var(--glass-2);
+  border: 1px solid var(--glass-stroke);
+}
+
+.scope button {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 9px;
+  font-size: 12px;
+  color: var(--ink-3);
+  transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+}
+
+.scope button:hover {
+  color: var(--ink-1);
+}
+
+.scope button.is-active {
+  background: var(--glass-3);
+  color: var(--ink-1);
+  box-shadow: 0 1px 2px rgba(20, 26, 40, 0.08);
+}
+
+.scopebar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px 6px;
+  flex: none;
+}
+
+.scopebar__hint {
+  font-size: 11.5px;
+  color: var(--ink-4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 悬浮挂件只有 460 宽：收起提示文字，只留三个按钮 */
+:root[data-mode='dock'] .scopebar {
+  padding: 0 10px 4px;
+}
+
+:root[data-mode='dock'] .scopebar__hint {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .scope button {
+    padding: 0 8px;
+    font-size: 11.5px;
+  }
+}
+
+/* ------------------------------ 星标 ------------------------------ */
+
+.grid-card__fav {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  color: var(--ink-3);
+  opacity: 0;
+  transition: opacity var(--t-fast) var(--ease), color var(--t-fast) var(--ease),
+    background var(--t-fast) var(--ease);
+}
+
+.grid-card:hover .grid-card__fav,
+.grid-card__fav.is-on {
+  opacity: 1;
+}
+
+.grid-card__fav:hover {
+  background: var(--glass-3);
+  color: var(--ink-1);
+}
+
+.grid-card__fav.is-on {
+  color: var(--accent-strong);
+}
+
+/* 收藏过的卡片：右上角星标常亮，卡片本身只加一道极淡的边 */
+.file-row.is-fav .row-mini.is-on {
+  color: var(--accent-strong);
+}
+
+.grid-card.is-fav {
+  border-color: var(--accent-ring);
+}
+
+/* ------------------------------ 快速预览 ------------------------------ */
+
+.preview {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.preview__scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(14, 18, 26, 0.28);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  animation: preview-fade 180ms var(--ease) both;
+}
+
+.preview__panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(920px, 92vw);
+  height: min(720px, 84vh);
+  border-radius: var(--radius-xl);
+  background: var(--sheet-bg, rgba(250, 251, 254, 0.97));
+  box-shadow: var(--shadow-3), inset 0 1px 0 var(--glass-hair);
+  overflow: hidden;
+  animation: preview-in 220ms var(--ease-out) both;
+}
+
+.preview__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--glass-edge);
+  flex: none;
+}
+
+.preview__meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.preview__title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview__sub {
+  margin-top: 3px;
+  font-size: 11.5px;
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview__acts {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
+.preview__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  padding: 14px 18px 18px;
+  overflow: auto;
+}
+
+.preview__img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: var(--radius-m);
+  box-shadow: var(--shadow-1);
+}
+
+.preview__pdf {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: var(--radius-m);
+  background: transparent;
+}
+
+.preview__text {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 14px 16px;
+  overflow: auto;
+  border-radius: var(--radius-m);
+  background: var(--glass-1);
+  border: 1px solid var(--glass-stroke);
+  font-family: 'Cascadia Mono', 'Consolas', ui-monospace, monospace;
+  font-size: 12px;
+  line-height: 1.75;
+  color: var(--ink-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
+.preview__hint {
+  max-width: 30em;
+  text-align: center;
+  font-size: 12.5px;
+  line-height: 1.8;
+  color: var(--ink-3);
+}
+
+.preview__note {
+  align-self: stretch;
+  margin-bottom: 8px;
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+
+@keyframes preview-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes preview-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* 紧凑模式里预览铺满：460 宽的窗口再留边距就只剩一条缝 */
+:root[data-mode='dock'] .preview,
+:root[data-mode='sidebar'] .preview {
+  padding: 8px;
+}
+
+:root[data-mode='dock'] .preview__panel,
+:root[data-mode='sidebar'] .preview__panel {
+  width: 100%;
+  height: 100%;
+}
+
+/* ------------------------------ 确认框 ------------------------------ */
+
+.confirm {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.confirm__scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(14, 18, 26, 0.3);
+  animation: preview-fade 140ms var(--ease) both;
+}
+
+.confirm__panel {
+  position: relative;
+  width: min(360px, 88vw);
+  padding: 18px 18px 14px;
+  border-radius: var(--radius-xl);
+  background: var(--sheet-bg, rgba(250, 251, 254, 0.97));
+  border: 1px solid var(--glass-stroke);
+  box-shadow: var(--shadow-3);
+  animation: preview-in 180ms var(--ease-out) both;
+}
+
+.confirm__title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink-1);
+}
+
+.confirm__body {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.75;
+  color: var(--ink-2);
+}
+
+.confirm__acts {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* ------------------------------ 快捷键表 ------------------------------ */
+
+.shortcut-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 6px 14px;
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+
+.shortcut-row kbd {
+  flex: none;
+  min-width: 62px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--glass-stroke);
+  background: var(--glass-2);
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--ink-2);
+  text-align: center;
+}

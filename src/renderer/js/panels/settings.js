@@ -12,6 +12,12 @@ import { icon, categoryIcon, categoryTone } from '../icons.js';
 import { esc, formatClock } from '../format.js';
 import { t } from '../../../shared/i18n.mjs';
 
+/**
+ * 仓库地址：反馈 / 更新日志都跳这里。
+ * 发布前把这一行改成你自己的仓库，否则点开是 404。
+ */
+export const REPO_URL = 'https://github.com/filesorter/FileSorter';
+
 const TABS = [
   { id: 'appearance', label: 'settings.tab.appearance', icon: 'sun' },
   { id: 'rules', label: 'settings.tab.rules', icon: 'filter' },
@@ -171,6 +177,8 @@ function appearanceTab(state) {
       ${switchRow('skipHidden', t('settings.skipHidden'), '', s.skipHidden)}
       ${switchRow('closeToTray', t('settings.closeToTray'), '', s.closeToTray)}
       ${switchRow('watchEnabled', t('settings.watch'), t('settings.watch.hint'), s.watchEnabled)}
+      ${switchRow('learnMode', t('settings.learn'), t('settings.learn.hint'), s.learnMode)}
+      ${switchRow('autostart', t('settings.autostart'), t('settings.autostart.hint'), s.autostart)}
     </div>
 
     <div class="section">
@@ -498,9 +506,31 @@ function aboutTab(state) {
       <dt>${t('settings.dataDir')}</dt><dd>${esc(info.userData || '—')}</dd>
     </dl>
 
-    <div style="display:flex;gap:7px;margin-top:14px">
+    <div style="display:flex;gap:7px;margin-top:14px;flex-wrap:wrap">
       <button class="btn btn--sm" data-set-act="open-data">${icon('folder', 12)}<span>${t('settings.dataDir')}</span></button>
       <button class="btn btn--sm btn--ghost" data-set-act="open-repo">${icon('globe', 12)}<span>GitHub</span></button>
+      <button class="btn btn--sm btn--ghost" data-set-act="open-issues">${icon('alert', 12)}<span>${t('settings.feedback')}</span></button>
+      <button class="btn btn--sm btn--ghost" data-set-act="open-releases">${icon('ring', 12)}<span>${t('settings.releases')}</span></button>
+    </div>
+
+    <div class="section" style="margin-top:18px">
+      <div class="section__title" style="margin-bottom:6px">${t('settings.shortcuts')}</div>
+      <div class="shortcut-grid">
+        ${[
+          ['Ctrl K', t('settings.shortcuts.search')],
+          ['Ctrl 1~6', t('settings.shortcuts.bucket')],
+          ['Ctrl A', t('settings.shortcuts.selectAll')],
+          ['Enter', t('settings.shortcuts.open')],
+          ['Delete', t('settings.shortcuts.delete')],
+          ['Space', t('settings.shortcuts.check')],
+          ['Ctrl ,', t('settings.shortcuts.settings')],
+          ['Ctrl Shift W', t('settings.shortcuts.window')],
+        ]
+          .map(
+            ([keys, label]) => `<div class="shortcut-row"><kbd>${esc(keys)}</kbd><span>${esc(label)}</span></div>`,
+          )
+          .join('')}
+      </div>
     </div>
 
     <div class="section__hint" style="margin-top:14px">${t('settings.license')}</div>`;

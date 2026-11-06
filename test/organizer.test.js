@@ -117,3 +117,42 @@ test('空目录不产生计划也不报错', async () => {
   assert.equal(result.total, 0);
   await fs.rm(dir, { recursive: true, force: true });
 });
+
+test('学习模式：文件名命中课程关键词时归到「学习」', async () => {
+  const dir = await makeSandbox({
+    '高数笔记.md': 'x',
+    '期末复习提纲.txt': 'y',
+    'a.jpg': 'z',
+  });
+  const plan = await buildPlan(dir, { ...settings, learnMode: true });
+  const folderOf = Object.fromEntries(plan.items.map((item) => [item.name, item.folder]));
+
+  assert.equal(folderOf['高数笔记.md'], '学习');
+  assert.equal(folderOf['期末复习提纲.txt'], '学习');
+  // 没命中的仍然按扩展名走
+  assert.equal(folderOf['a.jpg'], '图片');
+});
+
+test('学习模式关闭时不受影响', async () => {
+  const dir = await makeSandbox({ '高数笔记.md': 'x' });
+  const plan = await buildPlan(dir, { ...settings, learnMode: false });
+  assert.equal(plan.items[0].folder, '文档');
+});
+
+test('学习模式不越过自定义规则', async () => {
+  const dir = await makeSandbox({ '高数笔记.md': 'x' });
+  const plan = await buildPlan(dir, {
+    ...settings,
+    learnMode: true,
+    customRules: [
+      {
+        id: 'keep',
+        name: '笔记单独放',
+        enabled: true,
+        target: '我的笔记',
+        conditions: [{ field: 'name', op: 'contains', value: '笔记' }],
+      },
+    ],
+  });
+  assert.equal(plan.items[0].folder, '我的笔记');
+});

@@ -2,6 +2,9 @@
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
+
+/** 学习模式的关键词：作业/笔记类文件几乎都会带其中一个 */
+const LEARN_PATTERN = /(笔记|作业|考试|课件|复习|习题|论文|实验报告|提纲|重点|真题)/;
 const scanner = require('./scanner');
 const { classify, resolveCategories, sanitizeFolderName, isHidden, isTempName } = require('./classifier');
 const { compileRules, matchRules, resolveTargetFolder } = require('./rules');
@@ -105,10 +108,19 @@ async function buildPlan(dir, settings, options = {}) {
     let ruleName = '';
 
     const hit = matchRules(compiledRules, fileMeta);
+    /**
+     * 学习模式：文件名里带这些词的，先归到「学习」，再按扩展名走。
+     * 放在自定义规则之后、扩展名分类之前 —— 用户自己写的规则永远优先。
+     */
+    const learnHit = settings.learnMode && LEARN_PATTERN.test(file.name);
     if (hit) {
       folder = resolveTargetFolder(hit.target, fileMeta);
       ruleName = hit.rule.name || hit.target;
       reason = `规则「${ruleName}」`;
+    } else if (learnHit) {
+      folder = '学习';
+      ruleName = '学习模式';
+      reason = '学习模式：文件名命中课程关键词';
     } else if (pluginFolders && pluginFolders.has(file.name)) {
       folder = sanitizeFolderName(pluginFolders.get(file.name), '');
       reason = '插件规则';

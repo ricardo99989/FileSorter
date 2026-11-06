@@ -8,7 +8,7 @@
 
 import { VirtualList } from './vlist.js';
 import { icon, categoryIcon, categoryTone } from './icons.js';
-import { clamp, debounce, esc, greeting } from './format.js';
+import { clamp, debounce, esc, formatRelative, formatSize, greeting } from './format.js';
 import {
   filterEntries,
   gridCardHtml,
@@ -30,7 +30,7 @@ import {
   wheelSvg,
 } from './wheel.js';
 import { organizeHtml } from './panels/organize.js';
-import { settingsHtml } from './panels/settings.js';
+import { settingsHtml, REPO_URL } from './panels/settings.js';
 import { dupesHtml } from './panels/dupes.js';
 import { spaceHtml } from './panels/space.js';
 import { batchHtml } from './panels/batch.js';
@@ -82,6 +82,13 @@ const dom = {
   wheel: $('wheel'),
   wheelLegend: $('wheelLegend'),
   btnWheelFold: $('btnWheelFold'),
+  scopeBar: $('scopeBar'),
+  preview: $('preview'),
+  previewTitle: $('previewTitle'),
+  previewSub: $('previewSub'),
+  previewBody: $('previewBody'),
+  previewOpen: $('previewOpen'),
+  previewClose: $('previewClose'),
 };
 
 const state = {
@@ -127,6 +134,11 @@ const state = {
   /* 轮盘 */
   wheelModel: { buckets: [], total: 0, totalSize: 0 },
   wheelFilter: '',
+  /** 视图范围：all 全部 / fav 收藏 / recent 最近 7 天 */
+  scope: 'all',
+  /** 收藏：Set 存归一化路径用于查询，数组存原始路径用于持久化 */
+  favorites: new Set(),
+  favoriteList: [],
   /* null = 跟随窗口高度自动决定；true/false = 用户手动指定过 */
   wheelFold: null,
   /* 列表入场动画的计时起点：只有在这个时间窗内渲染的行才做错开淡入，
@@ -177,6 +189,7 @@ const list = new VirtualList({
           gridCardHtml(entry, {
             selected: state.selected === entry.path,
             checked: state.checked.has(entry.path),
+            favorite: state.favorites.has(normalizePath(entry.path)),
           }),
         )
         .join('');
@@ -184,7 +197,11 @@ const list = new VirtualList({
       const entry = state.entries[index];
       node.className = 'vrow';
       node.innerHTML = entry
-        ? rowHtml(entry, { selected: state.selected === entry.path, checked: state.checked.has(entry.path) })
+        ? rowHtml(entry, {
+            selected: state.selected === entry.path,
+            checked: state.checked.has(entry.path),
+            favorite: state.favorites.has(normalizePath(entry.path)),
+          })
         : '';
     }
 
@@ -403,6 +420,16 @@ function rebuildEntries() {
   let rows = filterEntries(base, state.query);
   // 轮盘筛选叠在关键词筛选之后：两者是"且"的关系，不是互斥
   if (state.wheelFilter) rows = rows.filter((entry) => bucketOf(entry).key === state.wheelFilter);
+  /**
+   * 范围筛选是最后一层：收藏看路径集合，最近看 mtime。
+   * 它和关键词、轮盘分类是"且"的关系 —— 用户可以先筛分类再只看收藏。
+   */
+  if (state.scope === 'fav') {
+    rows = rows.filter((entry) => state.favorites.has(normalizePath(entry.path)));
+  } else if (state.scope === 'recent') {
+    const cut = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    rows = rows.filter((entry) => Number(entry.mtime) >= cut);
+  }
   state.entries = sortEntries(rows, state.sort);
 }
 
@@ -584,6 +611,9 @@ function renderState() {
   else if (!state.entries.length) {
     if (state.deep) html = stateHtml('search', { query: state.deep.keyword, deep: true });
     else if (state.query) html = stateHtml('search', { query: state.query });
+    // 空状态要分清"这个文件夹是空的"和"这个范围里没有东西"
+    else if (state.scope === 'fav') html = stateHtml('fav');
+    else if (state.scope === 'recent') html = stateHtml('recent');
     else if (state.cwd) html = stateHtml('empty');
   }
 
@@ -818,10 +848,13 @@ function entryMenu(entry, x, y) {
   const inSelection = state.checked.has(entry.path);
   showMenu(x, y, [
     { id: 'open', label: entry.isDir ? t('menu.openDir') : t('menu.open'), icon: 'open', action: () => openEntry(entry) },
+    ...(entry.isDir
+      ? []
+      : [{ id: 'preview', label: t('menu.preview'), icon: 'eye', action: () => openPreview(entry) }]),
+    { id: 'fav', label: t('menu.favorite'), icon: 'star', action: () => toggleFavorite(entry) },
     { id: 'reveal', label: t('menu.reveal'), icon: 'locate', action: () => revealEntry(entry) },
     { id: 'copy', label: t('menu.copy'), icon: 'copy', action: () => copyEntry(entry) },
     { separator: true },
-    { id: 'preview', label: t('menu.preview'), icon: 'eye', action: () => select(entry) },
     { id: 'tag', label: t('menu.tag'), icon: 'tag', action: () => openTagPicker(entry) },
     { id: 'exclude', label: t('menu.exclude'), icon: 'lock', action: () => addExclude(entry.name) },
     { separator: true },
@@ -838,6 +871,33 @@ function entryMenu(entry, x, y) {
         openBatch();
       },
     },
+    {
+      id: 'move',
+      label: t('menu.moveTo'),
+      icon: 'folder',
+      action: () => {
+        if (!inSelection) {
+          state.checked.add(entry.path);
+          renderSelectionBar();
+          list.refresh();
+        }
+        moveChecked();
+      },
+    },
+    {
+      id: 'delete',
+      label: t('menu.delete'),
+      icon: 'trash',
+      action: () => {
+        if (!inSelection) {
+          state.checked.add(entry.path);
+          renderSelectionBar();
+          list.refresh();
+        }
+        trashChecked();
+      },
+    },
+    { separator: true },
     { id: 'organize', label: t('menu.organize'), icon: 'folder', action: () => openOrganize() },
   ]);
 }
@@ -1281,6 +1341,219 @@ async function saveSettings(patch, { rerender = true } = {}) {
   return result.data;
 }
 
+
+/* ------------------------------ 收藏与范围 ------------------------------ */
+
+const RECENT_MS = 7 * 24 * 60 * 60 * 1000;
+
+function isFavorite(path) {
+  return state.favorites.has(normalizePath(path));
+}
+
+function syncScope() {
+  if (!dom.scopeBar) return;
+  for (const button of dom.scopeBar.querySelectorAll('[data-scope]')) {
+    const active = button.dataset.scope === state.scope;
+    button.classList.toggle('is-active', active);
+    button.setAttribute('aria-pressed', String(active));
+  }
+}
+
+function setScope(scope) {
+  if (!['all', 'fav', 'recent'].includes(scope) || state.scope === scope) return;
+  state.scope = scope;
+  syncScope();
+  renderList({ resetScroll: true });
+}
+
+dom.scopeBar.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-scope]');
+  if (button) setScope(button.dataset.scope);
+});
+
+/**
+ * 收藏只存路径，不存文件内容。
+ * 好处是文件被重命名/删除后收藏自然失效，不用维护同步；坏处是重命名后会掉收藏，
+ * 这是可接受的 —— 总比存一份索引然后和磁盘对不上强。
+ */
+async function toggleFavorite(entry) {
+  if (!entry) return;
+  const key = normalizePath(entry.path);
+  if (state.favorites.has(key)) {
+    state.favorites.delete(key);
+    state.favoriteList = state.favoriteList.filter((item) => normalizePath(item) !== key);
+    toast(t('toast.unfav'));
+  } else {
+    state.favorites.add(key);
+    state.favoriteList.unshift(entry.path);
+    toast(t('toast.fav'));
+  }
+  list.refresh();
+  const result = await api.settings.save({ favorites: state.favoriteList });
+  if (!result.ok) toast(result.error || t('toast.failed'), { error: true });
+}
+
+/* ------------------------------ 快速预览 ------------------------------ */
+
+const PREVIEW_IMAGE = /\.(png|jpe?g|gif|webp|bmp|avif|svg|ico)$/i;
+const PREVIEW_TEXT = /\.(txt|md|markdown|log|json|js|mjs|cjs|ts|tsx|jsx|css|scss|html|xml|yml|yaml|ini|toml|cfg|conf|csv)$/i;
+const PREVIEW_PDF = /\.pdf$/i;
+
+let previewEntry = null;
+
+function fileUrl(target) {
+  return `file://${String(target).replace(/\\/g, '/')}`;
+}
+
+function closePreview() {
+  if (dom.preview.hidden) return;
+  dom.preview.hidden = true;
+  dom.preview.setAttribute('aria-hidden', 'true');
+  // 清空 body：PDF/视频的 iframe 不销毁会一直在后台跑
+  dom.previewBody.innerHTML = '';
+  previewEntry = null;
+}
+
+async function openPreview(entry) {
+  if (!entry || entry.isDir) return openEntry(entry);
+  previewEntry = entry;
+  dom.preview.hidden = false;
+  dom.preview.setAttribute('aria-hidden', 'false');
+  dom.previewTitle.textContent = entry.name;
+  dom.previewSub.textContent = `${entry.desc?.label || ''} · ${
+    entry.isDir ? '' : formatSize(entry.size)
+  } · ${formatRelative(entry.mtime)}`;
+  dom.previewOpen.textContent = t('preview.open');
+  dom.previewClose.textContent = t('preview.close');
+  dom.previewBody.innerHTML = `<div class="preview__hint">${esc(t('preview.loading'))}</div>`;
+
+  const src = fileUrl(entry.path);
+  try {
+    if (PREVIEW_IMAGE.test(entry.name)) {
+      dom.previewBody.innerHTML = `<img class="preview__img" src="${esc(src)}" alt="${esc(entry.name)}" />`;
+      return;
+    }
+    if (PREVIEW_PDF.test(entry.name)) {
+      // Chromium 自带阅读器；关掉自带的工具栏，只留第一页的样子
+      dom.previewBody.innerHTML = `<iframe class="preview__pdf" src="${esc(src)}#view=FitH&toolbar=0&navpanes=0&scrollbar=0" title="${esc(entry.name)}"></iframe>`;
+      return;
+    }
+    if (PREVIEW_TEXT.test(entry.name)) {
+      const result = await api.peek(entry.path);
+      if (previewEntry !== entry) return; // 期间换了文件，丢弃这次结果
+      if (result.ok && result.data?.kind === 'text') {
+        const note = result.data.truncated
+          ? `<div class="preview__note">${esc(t('preview.truncated', { n: Math.round((result.data.text.length || 0) / 1024) }))}</div>`
+          : '';
+        dom.previewBody.innerHTML = `${note}<pre class="preview__text">${esc(result.data.text)}</pre>`;
+        return;
+      }
+    }
+    dom.previewBody.innerHTML = `<div class="preview__hint">${esc(t('preview.unsupported'))}</div>`;
+  } catch (err) {
+    dom.previewBody.innerHTML = `<div class="preview__hint">${esc(String(err?.message || err))}</div>`;
+  }
+}
+
+dom.previewClose.addEventListener('click', closePreview);
+dom.preview.querySelector('[data-preview-close]').addEventListener('click', closePreview);
+dom.previewOpen.addEventListener('click', () => {
+  if (previewEntry) {
+    api.open(previewEntry.path);
+    closePreview();
+  }
+});
+
+/* ------------------------------ 确认框 ------------------------------ */
+
+/**
+ * 只有危险操作才弹。整理、移动这类可撤销的动作不打断用户。
+ * 返回 Promise<boolean>，调用处直接 await。
+ */
+function confirmAction({ title, body, ok = t('confirm.ok') }) {
+  return new Promise((resolve) => {
+    const layer = document.createElement('div');
+    layer.className = 'confirm';
+    layer.innerHTML = `
+      <div class="confirm__scrim" data-confirm-cancel></div>
+      <div class="confirm__panel" role="dialog" aria-modal="true">
+        <div class="confirm__title">${esc(title)}</div>
+        <div class="confirm__body">${esc(body)}</div>
+        <div class="confirm__acts">
+          <button class="btn btn--sm" type="button" data-confirm-cancel>${esc(t('confirm.cancel'))}</button>
+          <button class="btn btn--sm btn--danger" type="button" data-confirm-ok>${esc(ok)}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(layer);
+    const done = (value) => {
+      layer.remove();
+      document.removeEventListener('keydown', onKey, true);
+      resolve(value);
+    };
+    const onKey = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        done(false);
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    layer.querySelector('[data-confirm-ok]').addEventListener('click', () => done(true));
+    for (const close of layer.querySelectorAll('[data-confirm-cancel]')) {
+      close.addEventListener('click', () => done(false));
+    }
+    layer.querySelector('[data-confirm-ok]').focus();
+  });
+}
+
+/* ------------------------------ 批量删除 / 移动 ------------------------------ */
+
+function checkedEntries() {
+  return state.entries.filter((entry) => state.checked.has(entry.path));
+}
+
+async function trashChecked() {
+  const entries = checkedEntries();
+  if (!entries.length) return;
+  const ok = await confirmAction({
+    title: t('confirm.delete.title'),
+    body: t('confirm.delete.body', { n: entries.length }),
+    ok: t('sel.delete'),
+  });
+  if (!ok) return;
+  // 逐个删：IPC 层也做了逐个兜底，这里拿到的是"成功/失败"两份清单
+  const result = await api.trash(entries.map((entry) => entry.path));
+  if (!result.ok) {
+    toast(result.error || t('toast.failed'), { error: true });
+    return;
+  }
+  const done = result.data?.done?.length || 0;
+  const failed = result.data?.failed?.length || 0;
+  toast(
+    failed
+      ? `${t('toast.trashed', { n: done })} · ${failed} 项失败`
+      : t('toast.trashed', { n: done }),
+  );
+  clearChecked();
+  await navigate(state.cwd, { push: false, refresh: true, keepQuery: true });
+}
+
+async function moveChecked() {
+  const entries = checkedEntries();
+  if (!entries.length) return;
+  const picked = await api.pickFolder(t('confirm.move.title'));
+  if (!picked.ok || !picked.data?.path) return;
+  const dest = picked.data.path;
+  const result = await api.moveTo(entries.map((entry) => entry.path), dest);
+  if (!result.ok) {
+    toast(result.error || t('toast.failed'), { error: true });
+    return;
+  }
+  const done = result.data?.done?.length || 0;
+  toast(t('toast.moved', { n: done }));
+  clearChecked();
+  await navigate(state.cwd, { push: false, refresh: true, keepQuery: true });
+}
+
 /* ------------------------------ 事件：列表 ------------------------------ */
 
 dom.vcontent.addEventListener('click', (event) => {
@@ -1308,7 +1581,8 @@ dom.vcontent.addEventListener('click', (event) => {
     event.stopPropagation();
     const act = action.dataset.act;
     if (act === 'open') openEntry(entry);
-    else if (act === 'preview') select(entry);
+    else if (act === 'fav') toggleFavorite(entry);
+    else if (act === 'preview') openPreview(entry);
     else if (act === 'menu') {
       const rect = action.getBoundingClientRect();
       entryMenu(entry, rect.left, rect.bottom + 4);
@@ -1344,7 +1618,10 @@ dom.vcontent.addEventListener('dblclick', (event) => {
   const holder = event.target.closest('[data-path]');
   if (!holder) return;
   const entry = state.entries.find((item) => item.path === holder.dataset.path);
-  if (entry) openEntry(entry);
+  if (!entry) return;
+  // 文件夹仍然是"进去"；文件改成内嵌预览，不再拉起外部程序
+  if (entry.isDir) openEntry(entry);
+  else openPreview(entry);
 });
 
 dom.vcontent.addEventListener('contextmenu', (event) => {
@@ -1496,6 +1773,8 @@ dom.selectionBar.addEventListener('click', async (event) => {
   if (!act) return;
   const kind = act.dataset.selAct;
   if (kind === 'clear') return clearChecked();
+  if (kind === 'move') return moveChecked();
+  if (kind === 'delete') return trashChecked();
   if (kind === 'batch') return openBatch();
   if (kind === 'archive') return openBatch();
   if (kind === 'tag') {
@@ -1789,6 +2068,18 @@ dom.modal.addEventListener('click', async (event) => {
       }
       if (key === 'skipHidden') await navigate(state.cwd, { push: false, refresh: true, keepQuery: true });
       if (key === 'watchEnabled' && !on) api.watch(null, false);
+      // 开机自启不是纯设置：要同步到系统的登录项，失败要回滚开关
+      if (key === 'autostart') {
+        const result = await api.autostart(on);
+        if (!result.ok) {
+          toast(result.error || t('toast.failed'), { error: true });
+          toggle.classList.toggle('is-on', !on);
+          state.settings.autostart = !on;
+        } else {
+          state.settings.autostart = Boolean(result.data?.enabled);
+          toggle.classList.toggle('is-on', state.settings.autostart);
+        }
+      }
     }
     renderPanel();
     return;
@@ -1944,7 +2235,15 @@ dom.modal.addEventListener('click', async (event) => {
     }
 
     if (kind === 'open-repo') {
-      await api.openExternal('https://github.com/');
+      await api.openExternal(REPO_URL);
+      return;
+    }
+    if (kind === 'open-issues') {
+      await api.openExternal(`${REPO_URL}/issues/new`);
+      return;
+    }
+    if (kind === 'open-releases') {
+      await api.openExternal(`${REPO_URL}/releases`);
       return;
     }
   }
@@ -2069,6 +2368,10 @@ window.addEventListener('resize', debounce(() => {
 window.addEventListener('keydown', (event) => {
   const inInput = event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement;
   if (event.key === 'Escape') {
+    if (!dom.preview.hidden) {
+      closePreview();
+      return;
+    }
     if (!dom.menu.hidden) {
       dom.menu.hidden = true;
       return;
@@ -2094,6 +2397,31 @@ window.addEventListener('keydown', (event) => {
     return;
   }
   /* Ctrl+, 打开设置：紧凑模式下侧栏没了，这是唯一不依赖鼠标的入口 */
+  /* Ctrl+K 唤起搜索：不管焦点在哪都抢过来 */
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+    event.preventDefault();
+    dom.search.focus();
+    dom.search.select();
+    return;
+  }
+  /* Ctrl+1~6 直接切分类（等价于点轮盘扇区），Ctrl+0 取消筛选 */
+  if ((event.ctrlKey || event.metaKey) && /^[0-6]$/.test(event.key)) {
+    event.preventDefault();
+    if (event.key === '0') applyWheelFilter('');
+    else {
+      const bucket = WHEEL_BUCKETS[Number(event.key) - 1];
+      if (bucket) applyWheelFilter(bucket.key);
+    }
+    return;
+  }
+  /* Ctrl+A 全选当前筛选结果 */
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a' && !inInput) {
+    event.preventDefault();
+    for (const entry of state.entries) state.checked.add(entry.path);
+    renderSelectionBar();
+    list.refresh();
+    return;
+  }
   if ((event.ctrlKey || event.metaKey) && event.key === ',') {
     event.preventDefault();
     openSettings();
@@ -2106,6 +2434,18 @@ window.addEventListener('keydown', (event) => {
     return;
   }
   if (inInput) return;
+
+  if (event.key === 'Delete') {
+    event.preventDefault();
+    if (state.checked.size) trashChecked();
+    else if (state.selectedEntry) {
+      state.checked.add(state.selectedEntry.path);
+      renderSelectionBar();
+      list.refresh();
+      trashChecked();
+    }
+    return;
+  }
 
   const index = state.selected ? state.entries.findIndex((item) => item.path === state.selected) : -1;
 
@@ -2120,7 +2460,10 @@ window.addEventListener('keydown', (event) => {
     if (next) select(next, { scroll: true, index: nextIndex });
   } else if (event.key === 'Enter') {
     event.preventDefault();
-    if (state.selectedEntry) openEntry(state.selectedEntry);
+    if (state.selectedEntry) {
+      if (state.selectedEntry.isDir) openEntry(state.selectedEntry);
+      else openPreview(state.selectedEntry);
+    }
   } else if (event.key === 'F5') {
     event.preventDefault();
     navigate(state.cwd, { push: false, refresh: true, keepQuery: true });
@@ -2463,6 +2806,11 @@ async function boot() {
   if (infoResult.ok) state.info = infoResult.data;
   if (tagsResult.ok) state.tagList = tagsResult.data.tags;
 
+  // 收藏：数组存原始路径、Set 存归一化键，查表 O(1)
+  state.favoriteList = Array.isArray(state.settings.favorites) ? state.settings.favorites.slice() : [];
+  state.favorites = new Set(state.favoriteList.map((item) => normalizePath(item)));
+  syncScope();
+
   document.documentElement.lang = getLang() === 'en' ? 'en' : 'zh-CN';
   document.documentElement.dataset.mode = state.settings.mode || 'window';
   document.documentElement.dataset.side = state.settings.sidebarSide || 'left';
@@ -2516,4 +2864,7 @@ window.__lens = {
   navigate,
   openPanel: (kind) => (kind === 'settings' ? openSettings() : openDrawer(kind)),
   refreshTint: () => applyBackdropTint(),
+  preview: (entry) => openPreview(entry),
+  favorite: (entry) => toggleFavorite(entry),
+  setScope: (scope) => setScope(scope),
 };

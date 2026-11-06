@@ -330,8 +330,13 @@ function createWindow() {
   });
 
   mainWindow.once('ready-to-show', () => {
+    /**
+     * --hidden 是开机自启时带的参数：直接进托盘，不抢焦点。
+     * 用户点托盘图标（或再次双击快捷方式）再展开。
+     */
+    const hiddenStart = process.argv.includes('--hidden') && !isSmoke;
     if (isSmoke) mainWindow.showInactive();
-    else mainWindow.show();
+    else if (!hiddenStart) mainWindow.show();
     // 恢复上次的窗口形态（尺寸记忆已经存过，这里只摆位置）
     if (mode !== 'window') applyMode(mode, { silent: true });
   });
@@ -776,6 +781,74 @@ function attachSmokeProbe(win) {
           })(),
         }));
       })()`,
+      /* 预览浮层的静态取证：打开后不关，留给截图 */
+      previewshot: `(async () => {
+        await window.__lens.navigate(${JSON.stringify(smokeDir)});
+        await new Promise((r) => setTimeout(r, 800));
+        const target = window.__lens.state.entries.find((item) => /\.md$/i.test(item.path));
+        if (target) window.__lens.preview(target);
+        await new Promise((r) => setTimeout(r, 700));
+      })()`,
+      /* 端到端：收藏 → 范围筛选 → 双击预览 → 全选 → Esc 关闭 */
+      featuretest: `(async () => {
+        const out = {};
+        window.__lens.state.favorites.clear();
+        window.__lens.state.favoriteList = [];
+        await window.filesorter.settings.save({ favorites: [] });
+        await window.__lens.navigate(${JSON.stringify(smokeDir)});
+        await new Promise((r) => setTimeout(r, 800));
+        document.getElementById('btnList').click();
+        await new Promise((r) => setTimeout(r, 500));
+
+        const rows = () => [...document.querySelectorAll('.file-row')];
+        out.rows = rows().length;
+
+        // 1) 收藏第一个条目
+        rows()[0]?.querySelector('[data-act="fav"]')?.click();
+        await new Promise((r) => setTimeout(r, 500));
+        out.favCount = window.__lens.state.favorites.size;
+        out.favStored = window.__lens.state.favoriteList.length;
+
+        // 2) 范围切到收藏，应该只剩 1 条
+        window.__lens.setScope('fav');
+        await new Promise((r) => setTimeout(r, 500));
+        out.favRows = rows().length;
+        out.favEmpty = !document.getElementById('state').hidden;
+
+        window.__lens.setScope('all');
+        await new Promise((r) => setTimeout(r, 400));
+
+        // 3) 直接对 entries 里的文本文件开预览（虚拟列表里它可能在屏幕外）
+        const target =
+          window.__lens.state.entries.find((item) => /\.md$/i.test(item.path)) ||
+          window.__lens.state.entries.find((item) => /\.(txt|json)$/i.test(item.path));
+        out.found = Boolean(target);
+        out.target = target ? target.path.split(/[\\/]/).pop() : null;
+        if (target) window.__lens.preview(target);
+        await new Promise((r) => setTimeout(r, 900));
+        out.previewOpen = !document.getElementById('preview').hidden;
+        out.previewKind = document.querySelector('.preview__text')
+          ? 'text'
+          : document.querySelector('.preview__img')
+            ? 'image'
+            : document.querySelector('.preview__pdf')
+              ? 'pdf'
+              : 'none';
+        out.previewChars = document.querySelector('.preview__text')?.textContent.length || 0;
+        out.previewText = (document.getElementById('previewBody').textContent || '').slice(0, 80);
+        document.getElementById('previewClose').click();
+        await new Promise((r) => setTimeout(r, 250));
+        out.previewClosed = document.getElementById('preview').hidden;
+
+        // 4) Ctrl+A 全选
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true }));
+        await new Promise((r) => setTimeout(r, 300));
+        out.checked = window.__lens.state.checked.size;
+        out.selBar = !document.getElementById('selectionBar').hidden;
+        document.querySelector('[data-sel-act="clear"]')?.click();
+
+        console.log('FEATURE ' + JSON.stringify(out));
+      })()`,
       /* 端到端：悬浮模式 → 设置弹窗 → 点「窗口」分段 → 回到窗口模式 */
       compact_switch: `(async () => {
         await window.filesorter.setMode('dock');
@@ -902,6 +975,16 @@ function attachSmokeProbe(win) {
         )
         .catch(() => {});
     }
+    /**
+     * 截图前把所有 CSS 动画/过渡直接推到终点。
+     *
+     * 冒烟窗口是 showInactive 的，被别的窗口遮住时合成器会降频，动画可能停在
+     * 前几帧；拍出来的文字是半透明的（踩过：整屏字发灰，还以为是配色问题）。
+     * finish() 是同步的，不依赖下一帧。
+     */
+    await win.webContents
+      .executeJavaScript('document.getAnimations().forEach((a) => { try { a.finish(); } catch (e) {} })')
+      .catch(() => {});
     await new Promise((resolve) => setTimeout(resolve, 260));
 
     try {
@@ -1014,6 +1097,14 @@ app.whenReady().then(async () => {
    * 先采桌面、再开窗：此刻窗口还不存在，截到的是一张干净的壁纸，
    * 不会把我们自己的玻璃算进平均值（上一版就栽在这上面）。
    */
+  /**
+   * 开机自启：设置里打开过就同步一次系统登录项。
+   * 放在开窗前，避免用户看到窗口闪一下才被收进托盘。
+   */
+  if (store.get().autostart) {
+    app.setLoginItemSettings({ openAtLogin: true, args: ['--hidden'] });
+  }
+
   await captureDesktopMap();
   createWindow();
 

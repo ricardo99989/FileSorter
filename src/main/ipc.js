@@ -425,6 +425,101 @@ function registerIpc(ctx) {
     }),
   );
 
+  /* --------------------------- 删除 / 移动 --------------------------- */
+
+  /**
+   * 批量删除：走系统回收站，不真删。
+   * 目录也允许（整理下载文件夹时经常要整个删掉旧文件夹），但会先确认它不在系统盘关键位置。
+   */
+  ipcMain.handle(
+    'fs:trash',
+    wrap(async (payload) => {
+      const targets = (Array.isArray(payload.paths) ? payload.paths : [])
+        .map((item) => assertTarget(item))
+        .slice(0, 500);
+      const done = [];
+      const failed = [];
+      for (const target of targets) {
+        try {
+          await shell.trashItem(target);
+          done.push(target);
+        } catch (err) {
+          failed.push({ path: target, error: err.message || String(err) });
+        }
+      }
+      fsops.invalidate();
+      return { done, failed };
+    }),
+  );
+
+  /**
+   * 批量移动到目标文件夹。
+   * 重名不覆盖：自动加 " (2)" 后缀，宁可留两个也不悄悄盖掉用户的东西。
+   */
+  ipcMain.handle(
+    'fs:moveTo',
+    wrap(async (payload) => {
+      const dest = assertDir(payload.dest);
+      const targets = (Array.isArray(payload.paths) ? payload.paths : [])
+        .map((item) => assertTarget(item))
+        .slice(0, 500);
+
+      const destStat = await fsp.stat(dest).catch(() => null);
+      if (!destStat?.isDirectory()) throw new Error('目标不是文件夹');
+
+      const freeName = async (dir, name) => {
+        const ext = path.extname(name);
+        const stem = path.basename(name, ext);
+        let candidate = name;
+        let index = 2;
+        // 最多试 999 次，避免异常情况下死循环
+        while (index < 1000) {
+          const taken = await fsp
+            .lstat(path.join(dir, candidate))
+            .then(() => true)
+            .catch(() => false);
+          if (!taken) return candidate;
+          candidate = `${stem} (${index})${ext}`;
+          index += 1;
+        }
+        throw new Error(`目标文件夹里同名文件太多：${name}`);
+      };
+
+      const done = [];
+      const failed = [];
+      for (const source of targets) {
+        try {
+          // 移到自己所在的目录等于没动，直接跳过
+          if (path.dirname(source).toLowerCase() === dest.toLowerCase()) continue;
+          const name = await freeName(dest, path.basename(source));
+          await fsp.rename(source, path.join(dest, name));
+          done.push({ from: source, to: path.join(dest, name) });
+        } catch (err) {
+          failed.push({ path: source, error: err.message || String(err) });
+        }
+      }
+      fsops.invalidate();
+      return { done, failed, dest };
+    }),
+  );
+
+  /* --------------------------- 开机自启 --------------------------- */
+
+  ipcMain.handle(
+    'app:autostart',
+    wrap(async (payload) => {
+      if (typeof payload.enabled === 'boolean') {
+        app.setLoginItemSettings({
+          openAtLogin: payload.enabled,
+          // 启动时不弹窗，直接进托盘；用户点托盘再展开
+          args: ['--hidden'],
+        });
+        await store.save({ autostart: payload.enabled });
+      }
+      return { enabled: app.getLoginItemSettings().openAtLogin };
+    }),
+  );
+
   /* --------------------------- 空间分析 --------------------------- */
 
   ipcMain.handle(

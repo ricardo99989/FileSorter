@@ -10,7 +10,7 @@ const path = require('node:path');
  * 保证 settings.json 可以人工编辑、可以跨版本迁移。
  */
 const DEFAULT_SETTINGS = Object.freeze({
-  version: 4,
+  version: 5,
 
   /* ---------------- 整理 ---------------- */
   /** 分类 id → 用户自定义文件夹名 */
@@ -56,6 +56,14 @@ const DEFAULT_SETTINGS = Object.freeze({
   window: { width: 1360, height: 860, maximized: false },
   /** 点关闭按钮时最小化到托盘，而不是退出 */
   closeToTray: true,
+
+  /* ---------------- 收藏与自动化 ---------------- */
+  /** 星标收藏的文件绝对路径（只存路径，文件被删就自然不会出现在收藏里） */
+  favorites: [],
+  /** 开机自启 */
+  autostart: false,
+  /** 学习模式：把「笔记/作业/考试/课件」类文件名归到「学习」 */
+  learnMode: false,
 
   /* ---------------- 监听与定时 ---------------- */
   /** 实时监听当前目录（chokidar 原生事件，不轮询） */
@@ -242,6 +250,22 @@ function createStore(baseDir) {
     next.mist = Math.round(num(raw.mist, DEFAULT_SETTINGS.mist, 0, 30));
     next.sidebarWidth = Math.round(num(raw.sidebarWidth, DEFAULT_SETTINGS.sidebarWidth, 320, 720));
     next.dupesMinSize = Math.round(num(raw.dupesMinSize, DEFAULT_SETTINGS.dupesMinSize, 0, 1024 * 1024));
+
+    if (typeof raw.autostart === 'boolean') next.autostart = raw.autostart;
+    if (typeof raw.learnMode === 'boolean') next.learnMode = raw.learnMode;
+    // 收藏只留绝对路径，去重、限长：这是个只增不减的列表，跑几年也不该把设置撑爆
+    if (Array.isArray(raw.favorites)) {
+      const seen = new Set();
+      next.favorites = raw.favorites
+        .filter((item) => typeof item === 'string' && item.length > 2)
+        .filter((item) => {
+          const key = item.toLowerCase();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .slice(0, 500);
+    }
 
     next.customRules = normalizeRules(raw.customRules);
     next.excludes = normalizeExcludes(raw.excludes);

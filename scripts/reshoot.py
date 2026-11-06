@@ -9,6 +9,7 @@
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
 
@@ -19,6 +20,8 @@ ELECTRON = os.path.join(ROOT, 'node_modules', 'electron', 'dist', 'electron.exe'
 DEMO = os.environ.get('FILE_SORTER_DEMO',
                       os.path.join(os.path.dirname(ROOT), '_demo_files'))
 OUT = os.path.join(ROOT, '_probe', 'shots')
+# 冒烟专用配置目录，和用户日常使用的 %APPDATA%/FileSorter 完全隔离
+PROFILE = os.path.join(ROOT, '_probe', 'uprofile')
 DOCS = os.path.join(ROOT, 'docs')
 
 # (步骤, 输出文件名, 主题, 模式, 裁切框, 目标宽度)
@@ -48,12 +51,28 @@ SHOTS = [
 ]
 
 
+def ensure_profile():
+    """冒烟用的是独立 userData（--user-data-dir），主题/模式必须写进那份设置，
+    写到 %APPDATA% 是不生效的 —— 上一版就因为这个，深色截图被当成浅色重拍。"""
+    os.makedirs(PROFILE, exist_ok=True)
+    target = os.path.join(PROFILE, 'settings.json')
+    if not os.path.exists(target):
+        try:
+            shutil.copyfile(SETTINGS, target)
+        except OSError:
+            with open(target, 'w', encoding='utf-8') as f:
+                json.dump({}, f)
+    return target
+
+
 def set_prefs(theme, mode):
-    with open(SETTINGS, encoding='utf-8') as f:
+    target = ensure_profile()
+    with open(target, encoding='utf-8') as f:
         d = json.load(f)
     d['theme'] = theme
     d['mode'] = mode
-    with open(SETTINGS, 'w', encoding='utf-8') as f:
+    # 截图里不要保留"上次拖过的窗口尺寸"，统一用默认
+    with open(target, 'w', encoding='utf-8') as f:
         json.dump(d, f, ensure_ascii=False, indent=2)
 
 
@@ -92,13 +111,20 @@ def main():
         set_prefs(theme, mode)
         raw = os.path.join(OUT, 'raw-' + name)
         out = os.path.join(DOCS, name)
+        # 每次都用独立的 Chromium 配置目录：用户正开着 FileSorter 时，
+        # 共享 userData 会让缓存锁冲突，应用直接起不来；而脚本只检查 raw 是否存在，
+        # 就会拿上一轮的旧图当成本轮结果（踩过：截图看起来"没变化"）。
         args = [ELECTRON, '.', '--smoke', '--smoke-mode=' + mode,
+                '--user-data-dir=' + PROFILE,
                 '--smoke-size=1360x860',
                 '--capture-screen', '--capture=' + raw]
         if step:
             args.append('--smoke-step=' + step)
 
         for attempt in range(3):
+            # 先删旧图：否则应用没起来时，存在性检查会把旧文件当成功
+            if os.path.exists(raw):
+                os.remove(raw)
             r = subprocess.run(args, cwd=ROOT, env=env, capture_output=True, text=True,
                                timeout=120)
             ok = os.path.exists(raw)
